@@ -7,16 +7,6 @@ type Device interface {
 	Close() error
 }
 
-// Advanced exposes report-specific operations and lengths when available.
-// Implementations may choose to support only a subset.
-type Advanced interface {
-	WriteOutput(reportID byte, data []byte) error
-	ReadInput() ([]byte, error)
-	WriteFeature(reportID byte, data []byte) error
-	ReadFeature(reportID byte) ([]byte, error)
-	ReportLens() (inLen, outLen, featLen int)
-}
-
 // Info represents a HID device descriptor.
 type Info struct {
 	Path         string

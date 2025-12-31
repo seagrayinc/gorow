@@ -7,7 +7,6 @@ import (
 	"log"
 
 	"github.com/seagrayinc/pm5-csafe/internal/hid"
-	"github.com/seagrayinc/pm5-csafe/internal/pm5"
 	"github.com/seagrayinc/pm5-csafe/pm5csafe"
 )
 
@@ -19,7 +18,7 @@ func main() {
 		panic(err)
 	}
 
-	dev, err := mgr.OpenVIDPID(pm5.Concept2VID, pm5.PM5PID)
+	dev, err := mgr.OpenVIDPID(pm5csafe.Concept2VID, pm5csafe.PM5PID)
 	if err != nil {
 		log.Fatal("PM5 not found by VID")
 	}
@@ -28,7 +27,7 @@ func main() {
 
 	if adv, ok := dev.(hid.Device); ok {
 		// Send GETID command
-		frame := pm5csafe.NewHIDReport(pm5csafe.NewStandardFrame(pm5csafe.CSAFEGetID()))
+		frame := pm5csafe.NewHIDReport(pm5csafe.NewExtendedFrame(pm5csafe.CSAFEGetID()))
 		if _, err := adv.Write(frame); err != nil {
 			log.Fatalf("Write failed: %v", err)
 		}
@@ -45,7 +44,7 @@ func main() {
 			log.Fatal("no data received")
 		}
 
-		response, err := pm5csafe.ParseHIDResponse(resp)
+		response, err := pm5csafe.ParseExtendedHIDResponse(resp)
 		if err != nil {
 			panic(err)
 		}

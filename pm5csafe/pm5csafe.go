@@ -1,3 +1,6 @@
+// Package pm5csafe implements the PM5 CSAFE Protocol defined at
+// https://www.concept2.sg/files/pdf/us/monitors/PM5_CSAFECommunicationDefinition.pdf
+
 package pm5csafe
 
 import (
@@ -6,6 +9,14 @@ import (
 )
 
 const (
+	Concept2VID uint16 = 0x17A4
+	PM5PID      uint16 = 0x001E
+
+	// From Table 4 - Extended Frame Addressing
+	ExtendedFrameAddressPCHostPrimary    = 0x00
+	ExtendedFrameAddressDefaultSecondary = 0xFD
+	ExtendedFrameAddressBroadcast        = 0xFF
+
 	// From Table 5 - Unique Frame Flags
 	ExtendedFrameStartFlag = 0xF0
 	StandardFrameStartFlag = 0xF1
@@ -69,11 +80,11 @@ type StandardFrame struct {
 
 type ExtendedFrame struct {
 	ExtendedStartFlag  []byte
-	DestinationAddress []byte
-	SourceAddress      []byte
+	DestinationAddress byte
+	SourceAddress      byte
 	FrameContents      []byte
-	Checksum           []byte
-	StopFlag           []byte
+	Checksum           byte
+	StopFlag           byte
 }
 
 func Checksum(bytes []byte) byte {
@@ -99,24 +110,66 @@ func (sc ShortCommand) Bytes() []byte {
 	return []byte{sc.ShortCommand}
 }
 
-type ResponseFrame struct {
+type StandardResponseFrame struct {
 	Status              byte
 	CommandResponseData []byte
 }
 
-func (rf ResponseFrame) FrameToggle() byte {
+type ExtendedResponseFrame struct {
+	Status              byte
+	DestinationAddress  byte
+	SourceAddress       byte
+	CommandResponseData []byte
+}
+
+func (rf ExtendedResponseFrame) FrameToggle() byte {
 	return rf.Status & FrameToggleBitMask
 }
 
-func (rf ResponseFrame) PreviousFrameStatus() byte {
+func (rf ExtendedResponseFrame) PreviousFrameStatus() byte {
 	return rf.Status & PreviousFrameStatusBitMask
 }
 
-func (rf ResponseFrame) StateMachineState() byte {
+func (rf ExtendedResponseFrame) StateMachineState() byte {
 	return rf.Status & StateMachineStateBitMask
 }
 
-func (rf ResponseFrame) CommandResponses() ([]IndividualCommandResponse, error) {
+func (rf ExtendedResponseFrame) CommandResponses() ([]IndividualCommandResponse, error) {
+	var cmdIdx int
+	var responses []IndividualCommandResponse
+
+	for {
+		dataByteCount := rf.CommandResponseData[cmdIdx+1]
+		resp := IndividualCommandResponse{
+			Command:       rf.CommandResponseData[cmdIdx],
+			DataByteCount: dataByteCount,
+			Data:          make([]byte, dataByteCount),
+		}
+
+		copy(resp.Data, rf.CommandResponseData[cmdIdx+2:cmdIdx+2+int(dataByteCount)])
+
+		responses = append(responses, resp)
+		if cmdIdx > len(rf.CommandResponseData) {
+			break
+		}
+	}
+
+	return responses, nil
+}
+
+func (rf StandardResponseFrame) FrameToggle() byte {
+	return rf.Status & FrameToggleBitMask
+}
+
+func (rf StandardResponseFrame) PreviousFrameStatus() byte {
+	return rf.Status & PreviousFrameStatusBitMask
+}
+
+func (rf StandardResponseFrame) StateMachineState() byte {
+	return rf.Status & StateMachineStateBitMask
+}
+
+func (rf StandardResponseFrame) CommandResponses() ([]IndividualCommandResponse, error) {
 	var cmdIdx int
 	var responses []IndividualCommandResponse
 
@@ -156,6 +209,16 @@ func NewStandardFrame(command ShortCommand) []byte {
 	return frame
 }
 
+func NewExtendedFrame(command ShortCommand) []byte {
+	frame := []byte{ExtendedFrameStartFlag}
+	frame = append(frame, ExtendedFrameAddressDefaultSecondary)
+	frame = append(frame, ExtendedFrameAddressPCHostPrimary)
+	frame = append(frame, command.Bytes()...)
+	frame = append(frame, Checksum(command.Bytes()))
+	frame = append(frame, StopFrameFlag)
+	return frame
+}
+
 // NewHIDReport converts the byte to an HID message and selects the appropriate byte size given the payload.
 func NewHIDReport(b []byte) []byte {
 	// hard-code to use report ID 2 for now
@@ -181,19 +244,38 @@ func findFrameEnd(frame []byte) (int, error) {
 	return 0, errors.New("could not find frame end")
 }
 
-func ParseHIDResponse(b []byte) (ResponseFrame, error) {
+func ParseStandardHIDResponse(b []byte) (StandardResponseFrame, error) {
 	// skip first byte, it's the HID report id
 	if b[1] != StandardFrameStartFlag {
-		return ResponseFrame{}, errors.New("could not find frame start")
+		return StandardResponseFrame{}, errors.New("could not find frame start")
 	}
 
 	frameStop, err := findFrameEnd(b)
 	if err != nil {
-		return ResponseFrame{}, err
+		return StandardResponseFrame{}, err
 	}
 
-	return ResponseFrame{
+	return StandardResponseFrame{
 		Status:              b[2],
 		CommandResponseData: b[3:frameStop],
+	}, nil
+}
+
+func ParseExtendedHIDResponse(b []byte) (ExtendedResponseFrame, error) {
+	// skip first byte, it's the HID report id
+	if b[1] != ExtendedFrameStartFlag {
+		return ExtendedResponseFrame{}, errors.New("could not find frame start")
+	}
+
+	frameStop, err := findFrameEnd(b)
+	if err != nil {
+		return ExtendedResponseFrame{}, err
+	}
+
+	return ExtendedResponseFrame{
+		DestinationAddress:  b[2],
+		SourceAddress:       b[3],
+		Status:              b[4],
+		CommandResponseData: b[5:frameStop],
 	}, nil
 }
