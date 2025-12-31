@@ -1,0 +1,10 @@
+github.com/ebitengine/purego v0.8.1 h1:sdRKd6plj7KYW33EH5As6YKfe8m9zbN9JMrOjNVF/BE=
+github.com/ebitengine/purego v0.8.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
+github.com/karalabe/usb v0.0.2 h1:M6QQBNxF+CQ8OFvxrT90BA0qBOXymndZnk5q235mFc4=
+github.com/karalabe/usb v0.0.2/go.mod h1:Od972xHfMJowv7NGVDiWVxk2zxnWgjLlJzE+F4F7AGU=
+github.com/sstallion/go-hid v0.15.0 h1:WERW/VW3Us6N73V2qa7HjdqWQvwHd0CoRDOP/N707/w=
+github.com/sstallion/go-hid v0.15.0/go.mod h1:fPKp4rqx0xuoTV94gwKojsPG++KNKhxuU88goGuGM7I=
+golang.org/x/sys v0.8.0 h1:EBmGv8NaZBZTWvrbjNoL6HVt+IVy3QDQpJs7VRIw3tU=
+golang.org/x/sys v0.8.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+rafaelmartins.com/p/usbhid v0.0.0-20250616003425-c818f1cb579e h1:Xlg01Rbs6PVG1yOvNEmMjI+edsmua23REsPO+tyhOyU=
+rafaelmartins.com/p/usbhid v0.0.0-20250616003425-c818f1cb579e/go.mod h1:focKssvBxJwZE6GrEZipSBZsUwsFkcc0ECSq/In1Kww=
