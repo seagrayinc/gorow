@@ -27,7 +27,7 @@ func main() {
 
 	if adv, ok := dev.(hid.Device); ok {
 		// Send GETID command
-		frame := pm5csafe.NewHIDReport(pm5csafe.NewExtendedFrame(pm5csafe.CSAFEGetID()))
+		frame := pm5csafe.NewHIDReport(pm5csafe.NewExtendedFrame(pm5csafe.CSAFEGetVersion()))
 		if _, err := adv.Write(frame); err != nil {
 			log.Fatalf("Write failed: %v", err)
 		}
@@ -52,7 +52,16 @@ func main() {
 		fmt.Println(hex.EncodeToString([]byte{response.FrameToggle()}))
 		fmt.Println(hex.EncodeToString([]byte{response.PreviousFrameStatus()}))
 		fmt.Println(hex.EncodeToString([]byte{response.StateMachineState()}))
-		fmt.Println(response.CommandResponses())
+		responses, err := response.CommandResponses()
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(hex.EncodeToString(responses[0].Data))
+		parsed, err := pm5csafe.ParseGetVersionResponse(responses[0].Data)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%+v", parsed)
 	} else {
 		log.Fatal("device doesn't support Advanced interface")
 	}

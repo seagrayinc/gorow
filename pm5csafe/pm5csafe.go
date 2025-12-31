@@ -4,6 +4,7 @@
 package pm5csafe
 
 import (
+	"encoding/binary"
 	"errors"
 	"time"
 )
@@ -59,6 +60,7 @@ const (
 	CSAFE_GETPMCFG_CMD    = 0x7E
 	CSAFE_GETPMDATA_CMD   = 0x7F
 	CSAFE_GETID_CMD       = 0x92
+	CSAFE_GETVERSION_CMD  = 0x91
 )
 
 var (
@@ -241,6 +243,30 @@ func CSAFEGetID() ShortCommand {
 	return ShortCommand{
 		ShortCommand: CSAFE_GETID_CMD,
 	}
+}
+
+func CSAFEGetVersion() ShortCommand {
+	return ShortCommand{
+		ShortCommand: CSAFE_GETVERSION_CMD,
+	}
+}
+
+type GetVersionResponse struct {
+	ManufacturerID  int
+	ClassID         int
+	Model           int
+	HardwareVersion int
+	FirmwareVersion int
+}
+
+func ParseGetVersionResponse(b []byte) (GetVersionResponse, error) {
+	return GetVersionResponse{
+		ManufacturerID:  int(b[0]),
+		ClassID:         int(b[1]),
+		Model:           int(b[2]),
+		HardwareVersion: int(binary.LittleEndian.Uint16(b[3:5])),
+		FirmwareVersion: int(binary.LittleEndian.Uint16(b[5:7])),
+	}, nil
 }
 
 func findFrameEnd(frame []byte) (int, error) {
