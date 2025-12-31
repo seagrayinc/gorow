@@ -112,6 +112,7 @@ func (sc ShortCommand) Bytes() []byte {
 
 type StandardResponseFrame struct {
 	Status              byte
+	Checksum            byte
 	CommandResponseData []byte
 }
 
@@ -119,6 +120,7 @@ type ExtendedResponseFrame struct {
 	Status              byte
 	DestinationAddress  byte
 	SourceAddress       byte
+	Checksum            byte
 	CommandResponseData []byte
 }
 
@@ -146,9 +148,12 @@ func (rf ExtendedResponseFrame) CommandResponses() ([]IndividualCommandResponse,
 			Data:          make([]byte, dataByteCount),
 		}
 
-		copy(resp.Data, rf.CommandResponseData[cmdIdx+2:cmdIdx+2+int(dataByteCount)])
+		dataStart := cmdIdx + 1 + 1 // starts after the command and data size
+		dataEnd := dataStart + int(dataByteCount)
 
+		copy(resp.Data, rf.CommandResponseData[dataStart:dataEnd])
 		responses = append(responses, resp)
+		cmdIdx = dataEnd + 1
 		if cmdIdx > len(rf.CommandResponseData) {
 			break
 		}
@@ -181,9 +186,13 @@ func (rf StandardResponseFrame) CommandResponses() ([]IndividualCommandResponse,
 			Data:          make([]byte, dataByteCount),
 		}
 
-		copy(resp.Data, rf.CommandResponseData[cmdIdx+2:cmdIdx+2+int(dataByteCount)])
+		dataStart := cmdIdx + 1 + 1 // starts after the command and data size
+		dataEnd := dataStart + int(dataByteCount)
+
+		copy(resp.Data, rf.CommandResponseData[dataStart:dataEnd])
 
 		responses = append(responses, resp)
+		cmdIdx = dataEnd + 1
 		if cmdIdx > len(rf.CommandResponseData) {
 			break
 		}
@@ -257,7 +266,8 @@ func ParseStandardHIDResponse(b []byte) (StandardResponseFrame, error) {
 
 	return StandardResponseFrame{
 		Status:              b[2],
-		CommandResponseData: b[3:frameStop],
+		CommandResponseData: b[3 : frameStop-1],
+		Checksum:            b[frameStop-1],
 	}, nil
 }
 
@@ -276,6 +286,7 @@ func ParseExtendedHIDResponse(b []byte) (ExtendedResponseFrame, error) {
 		DestinationAddress:  b[2],
 		SourceAddress:       b[3],
 		Status:              b[4],
-		CommandResponseData: b[5:frameStop],
+		CommandResponseData: b[5 : frameStop-1],
+		Checksum:            b[frameStop-1],
 	}, nil
 }
