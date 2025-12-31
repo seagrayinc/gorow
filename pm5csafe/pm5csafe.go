@@ -61,6 +61,7 @@ const (
 	CSAFE_GETPMDATA_CMD   = 0x7F
 	CSAFE_GETID_CMD       = 0x92
 	CSAFE_GETVERSION_CMD  = 0x91
+	CSAFE_GETPOWER_CMD    = 0xB4
 )
 
 var (
@@ -249,6 +250,24 @@ func CSAFEGetVersion() ShortCommand {
 	return ShortCommand{
 		ShortCommand: CSAFE_GETVERSION_CMD,
 	}
+}
+
+func CSAFEGetPower() ShortCommand {
+	return ShortCommand{
+		ShortCommand: CSAFE_GETPOWER_CMD,
+	}
+}
+
+type GetPowerResponse struct {
+	StrokeWatts    int
+	UnitsSpecifier int
+}
+
+func ParseGetPowerResponse(b []byte) (GetPowerResponse, error) {
+	return GetPowerResponse{
+		StrokeWatts:    int(binary.LittleEndian.Uint16(b[:2])),
+		UnitsSpecifier: int(b[2]),
+	}, nil
 }
 
 type GetVersionResponse struct {

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/seagrayinc/pm5-csafe/internal/hid"
 	"github.com/seagrayinc/pm5-csafe/pm5csafe"
@@ -62,6 +63,38 @@ func main() {
 			panic(err)
 		}
 		fmt.Printf("%+v", parsed)
+
+		time.Sleep(5 * time.Second)
+		for {
+			frame := pm5csafe.NewHIDReport(pm5csafe.NewExtendedFrame(pm5csafe.CSAFEGetPower()))
+			if _, err := adv.Write(frame); err != nil {
+				log.Fatalf("Write failed: %v", err)
+			}
+
+			resp := make([]byte, len(frame))
+			_, err := adv.Read(resp)
+			if err != nil {
+				log.Fatalf("ReadInput failed: %v", err)
+			}
+
+			response, err := pm5csafe.ParseExtendedHIDResponse(resp)
+			if err != nil {
+				panic(err)
+			}
+
+			responses, err := response.CommandResponses()
+			if err != nil {
+				panic(err)
+			}
+
+			parsedPower, err := pm5csafe.ParseGetPowerResponse(responses[0].Data)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Printf("%+v\n", parsedPower)
+
+			time.Sleep(250 * time.Millisecond)
+		}
 	} else {
 		log.Fatal("device doesn't support Advanced interface")
 	}
