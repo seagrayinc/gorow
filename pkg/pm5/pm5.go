@@ -220,11 +220,14 @@ type IndividualCommandResponse struct {
 }
 
 func extendedFrame(b []byte) []byte {
+	var frameContents []byte
+	frameContents = append(frameContents, ExtendedFrameAddressDefaultSecondary)
+	frameContents = append(frameContents, ExtendedFrameAddressPCHostPrimary)
+	frameContents = append(frameContents, b...)
+	frameContents = append(frameContents, Checksum(b))
+
 	frame := []byte{ExtendedFrameStartFlag}
-	frame = append(frame, ExtendedFrameAddressDefaultSecondary)
-	frame = append(frame, ExtendedFrameAddressPCHostPrimary)
-	frame = append(frame, b...)
-	frame = append(frame, Checksum(b))
+	frame = append(frame, byteStuff(frameContents)...)
 	frame = append(frame, StopFrameFlag)
 	return frame
 }
@@ -323,6 +326,61 @@ func findFrameEnd(frame []byte) (int, error) {
 	return 0, errors.New("could not find frame end")
 }
 
+func byteStuff(input []byte) []byte {
+	out := make([]byte, 0, len(input))
+
+	for _, b := range input {
+		switch b {
+		case 0xF0:
+			out = append(out, ByteStuffingFlag, 0x00)
+		case 0xF1:
+			out = append(out, ByteStuffingFlag, 0x01)
+		case 0xF2:
+			out = append(out, ByteStuffingFlag, 0x02)
+		case 0xF3:
+			out = append(out, ByteStuffingFlag, 0x03)
+		default:
+			out = append(out, b)
+		}
+	}
+
+	return out
+}
+
+func byteUnstuff(input []byte) ([]byte, error) {
+	out := make([]byte, 0, len(input))
+
+	for i := 0; i < len(input); i++ {
+		b := input[i]
+
+		if b != ByteStuffingFlag {
+			out = append(out, b)
+			continue
+		}
+
+		// Escape byte must be followed by a stuffing value
+		if i+1 >= len(input) {
+			return nil, fmt.Errorf("truncated escape sequence")
+		}
+
+		i++
+		switch input[i] {
+		case 0x00:
+			out = append(out, 0xF0)
+		case 0x01:
+			out = append(out, 0xF1)
+		case 0x02:
+			out = append(out, 0xF2)
+		case 0x03:
+			out = append(out, 0xF3)
+		default:
+			return nil, fmt.Errorf("invalid escape value 0x%02X", input[i])
+		}
+	}
+
+	return out, nil
+}
+
 func ParseExtendedHIDResponse(b []byte) (ExtendedResponseFrame, error) {
 	// skip first byte, it's the HID report id
 	if b[1] != ExtendedFrameStartFlag {
@@ -334,12 +392,21 @@ func ParseExtendedHIDResponse(b []byte) (ExtendedResponseFrame, error) {
 		return ExtendedResponseFrame{}, err
 	}
 
+	unstuffed, err := byteUnstuff(b[2:frameStop])
+	if err != nil {
+		return ExtendedResponseFrame{}, fmt.Errorf("byte unstuffing failed: %w", err)
+	}
 	frame := ExtendedResponseFrame{
-		DestinationAddress:  b[2],
-		SourceAddress:       b[3],
-		Status:              b[4],
-		CommandResponseData: b[5 : frameStop-1],
-		Checksum:            b[frameStop-1],
+		DestinationAddress:  unstuffed[0],
+		SourceAddress:       unstuffed[1],
+		Status:              unstuffed[2],
+		CommandResponseData: unstuffed[3 : len(unstuffed)-2],
+		Checksum:            unstuffed[len(unstuffed)-1],
+	}
+
+	// checksum excludes address information, but includes status and command response data
+	if frame.Checksum != Checksum(unstuffed[2:len(unstuffed)-1]) {
+		return ExtendedResponseFrame{}, fmt.Errorf("checksum mismatch")
 	}
 
 	if err := frame.parseResponses(); err != nil {
