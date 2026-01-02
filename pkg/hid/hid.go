@@ -5,6 +5,7 @@ type Device interface {
 	Write([]byte) (int, error) // send output report
 	Read([]byte) (int, error)  // read input report
 	Close() error
+	WriteReport(byte, []byte) error
 }
 
 // Info represents a HID device descriptor.
@@ -18,8 +19,6 @@ type Info struct {
 
 // Manager enumerates and opens HID devices.
 type Manager interface {
-	List() ([]Info, error)
-	Open(info Info) (Device, error)
 	OpenVIDPID(vendorID, productID uint16) (Device, error)
 }
 

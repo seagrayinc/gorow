@@ -1,14 +1,13 @@
 package main
 
 import (
-	"encoding/hex"
+	"context"
 	"flag"
 	"fmt"
-	"log"
 	"time"
 
-	"github.com/seagrayinc/pm5-csafe/internal/hid"
-	"github.com/seagrayinc/pm5-csafe/pm5csafe"
+	"github.com/seagrayinc/pm5-csafe/pkg/hid"
+	"github.com/seagrayinc/pm5-csafe/pkg/pm5"
 )
 
 func main() {
@@ -19,84 +18,38 @@ func main() {
 		panic(err)
 	}
 
-	dev, err := mgr.OpenVIDPID(pm5csafe.Concept2VID, pm5csafe.PM5PID)
+	performanceMonitor, err := pm5.Open(mgr)
 	if err != nil {
-		log.Fatal("PM5 not found by VID")
+		panic(err)
 	}
 
-	defer dev.Close()
+	defer performanceMonitor.Close()
 
-	if adv, ok := dev.(hid.Device); ok {
-		// Send GETID command
-		frame := pm5csafe.NewHIDReport(pm5csafe.NewExtendedFrame(pm5csafe.CSAFEGetVersion()))
-		if _, err := adv.Write(frame); err != nil {
-			log.Fatalf("Write failed: %v", err)
-		}
+	ctx := context.Background()
 
-		resp := make([]byte, len(frame))
-		_, err := adv.Read(resp)
+	id, err := performanceMonitor.GetID(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("%+v\n", id)
+
+	version, err := performanceMonitor.GetVersion(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("%+v\n", version)
+
+	time.Sleep(5 * time.Second)
+	for {
+		power, err := performanceMonitor.GetPower(ctx)
 		if err != nil {
-			log.Fatalf("ReadInput failed: %v", err)
+			fmt.Println(err)
 		}
 
-		if len(resp) > 0 {
-			fmt.Println(hex.EncodeToString(resp))
-		} else {
-			log.Fatal("no data received")
-		}
-
-		response, err := pm5csafe.ParseExtendedHIDResponse(resp)
-		if err != nil {
-			panic(err)
-		}
-
-		fmt.Println(hex.EncodeToString([]byte{response.FrameToggle()}))
-		fmt.Println(hex.EncodeToString([]byte{response.PreviousFrameStatus()}))
-		fmt.Println(hex.EncodeToString([]byte{response.StateMachineState()}))
-		responses, err := response.CommandResponses()
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println(hex.EncodeToString(responses[0].Data))
-		parsed, err := pm5csafe.ParseGetVersionResponse(responses[0].Data)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Printf("%+v", parsed)
-
-		time.Sleep(5 * time.Second)
-		for {
-			frame := pm5csafe.NewHIDReport(pm5csafe.NewExtendedFrame(pm5csafe.CSAFEGetPower()))
-			if _, err := adv.Write(frame); err != nil {
-				log.Fatalf("Write failed: %v", err)
-			}
-
-			resp := make([]byte, len(frame))
-			_, err := adv.Read(resp)
-			if err != nil {
-				log.Fatalf("ReadInput failed: %v", err)
-			}
-
-			response, err := pm5csafe.ParseExtendedHIDResponse(resp)
-			if err != nil {
-				panic(err)
-			}
-
-			responses, err := response.CommandResponses()
-			if err != nil {
-				panic(err)
-			}
-
-			parsedPower, err := pm5csafe.ParseGetPowerResponse(responses[0].Data)
-			if err != nil {
-				panic(err)
-			}
-			fmt.Printf("%+v\n", parsedPower)
-
-			time.Sleep(250 * time.Millisecond)
-		}
-	} else {
-		log.Fatal("device doesn't support Advanced interface")
+		fmt.Printf("%+v\n", power)
+		time.Sleep(250 * time.Millisecond)
 	}
 	return
 }

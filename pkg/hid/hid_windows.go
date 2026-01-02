@@ -9,13 +9,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Windows HID implementation using pure Go syscalls (no CGO)
-// This directly calls SetupAPI, HID API, and file I/O functions
-
 var (
 	hid      = windows.NewLazySystemDLL("hid.dll")
 	setupapi = windows.NewLazySystemDLL("setupapi.dll")
-	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
 	procHidD_GetHidGuid                  = hid.NewProc("HidD_GetHidGuid")
 	procHidD_GetAttributes               = hid.NewProc("HidD_GetAttributes")
@@ -207,6 +203,23 @@ func (m *winManager) List() ([]Info, error) {
 	return devices, nil
 }
 
+func (d *winDevice) WriteReport(b byte, data []byte) error {
+	// PM5 expects reports of specific sizes (21, 63, or 121 bytes) based on frame length
+	// The frame already includes padding to the right size from BuildCSAFEReport
+	// So we send exactly len(data)+1 bytes (reportID + data)
+	report := make([]byte, len(data)+1)
+	report[0] = b
+	copy(report[1:], data)
+
+	// Use WriteFile for interrupt OUT transfers
+	var written uint32
+	err := windows.WriteFile(d.handle, report, &written, nil)
+	if err != nil {
+		return fmt.Errorf("WriteFile failed: %v", err)
+	}
+	return nil
+}
+
 func (m *winManager) Open(info Info) (Device, error) {
 	pathPtr, err := windows.UTF16PtrFromString(info.Path)
 	if err != nil {
@@ -238,6 +251,7 @@ func (m *winManager) Open(info Info) (Device, error) {
 	r, _, _ = procHidP_GetCaps.Call(preparsedData, uintptr(unsafe.Pointer(&caps)))
 	procHidD_FreePreparsedData.Call(preparsedData)
 
+	//fmt.Printf("%+v", caps)
 	const HIDP_STATUS_SUCCESS = 0x00110000
 	if r != HIDP_STATUS_SUCCESS {
 		windows.CloseHandle(h)
@@ -263,6 +277,7 @@ func (m *winManager) OpenVIDPID(vendorID, productID uint16) (Device, error) {
 			return m.Open(d)
 		}
 	}
+
 	return nil, fmt.Errorf("device not found (VID:0x%04X PID:0x%04X)", vendorID, productID)
 }
 
@@ -332,37 +347,6 @@ func (d *winDevice) ReadInput() ([]byte, error) {
 		return report[1:read], nil
 	}
 	return nil, nil
-}
-
-func (d *winDevice) WriteFeature(reportID byte, data []byte) error {
-	report := make([]byte, d.featureLen)
-	report[0] = reportID
-	copy(report[1:], data)
-
-	r, _, err := procHidD_SetFeature.Call(
-		uintptr(d.handle),
-		uintptr(unsafe.Pointer(&report[0])),
-		uintptr(len(report)),
-	)
-	if r == 0 {
-		return fmt.Errorf("HidD_SetFeature failed: %v", err)
-	}
-	return nil
-}
-
-func (d *winDevice) ReadFeature(reportID byte) ([]byte, error) {
-	report := make([]byte, d.featureLen)
-	report[0] = reportID
-
-	r, _, err := procHidD_GetFeature.Call(
-		uintptr(d.handle),
-		uintptr(unsafe.Pointer(&report[0])),
-		uintptr(len(report)),
-	)
-	if r == 0 {
-		return nil, fmt.Errorf("HidD_GetFeature failed: %v", err)
-	}
-	return report[1:], nil
 }
 
 func (d *winDevice) ReportLens() (int, int, int) {

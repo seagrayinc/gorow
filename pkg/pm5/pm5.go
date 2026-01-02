@@ -1,12 +1,16 @@
 // Package pm5csafe implements the PM5 CSAFE Protocol defined at
 // https://www.concept2.sg/files/pdf/us/monitors/PM5_CSAFECommunicationDefinition.pdf
 
-package pm5csafe
+package pm5
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"time"
+
+	"github.com/seagrayinc/pm5-csafe/pkg/hid"
 )
 
 const (
@@ -74,11 +78,55 @@ var (
 	}
 )
 
-type StandardFrame struct {
-	StartFlag     []byte
-	FrameContents []byte
-	Checksum      []byte
-	StopFlag      []byte
+type PM5 struct {
+	device hid.Device
+}
+
+func (p PM5) GetVersion(ctx context.Context) (GetVersionResponse, error) {
+	return Send(ctx, p, GetVersion{})
+}
+
+func (p PM5) GetPower(ctx context.Context) (GetPowerResponse, error) {
+	return Send(ctx, p, GetPower{})
+}
+
+func (p PM5) GetID(ctx context.Context) (GetIDResponse, error) {
+	return Send(ctx, p, GetID{})
+}
+
+func Send[T any](_ context.Context, pm PM5, cmd Command[T]) (T, error) {
+	var zero T
+
+	report := hidReport2(extendedFrame(cmd.Marshall()))
+	_, err := pm.device.Write(report)
+	if err != nil {
+		return zero, fmt.Errorf("send failed: %w", err)
+	}
+
+	resp := make([]byte, len(report))
+	_, err = pm.device.Read(resp)
+
+	frame, err := ParseExtendedHIDResponse(resp)
+	if err != nil {
+		return zero, fmt.Errorf("failed to parse extended frame: %w", err)
+	}
+
+	return cmd.Unmarshall(frame.CommandResponses()[0].Data)
+}
+
+func Open(mgr hid.Manager) (PM5, error) {
+	dev, err := mgr.OpenVIDPID(Concept2VID, PM5PID)
+	if err != nil {
+		return PM5{}, errors.New("performance monitor not found")
+	}
+
+	return PM5{
+		device: dev,
+	}, nil
+}
+
+func (p PM5) Close() error {
+	return p.device.Close()
 }
 
 type ExtendedFrame struct {
@@ -113,33 +161,32 @@ func (sc ShortCommand) Bytes() []byte {
 	return []byte{sc.ShortCommand}
 }
 
-type StandardResponseFrame struct {
-	Status              byte
-	Checksum            byte
-	CommandResponseData []byte
-}
-
 type ExtendedResponseFrame struct {
 	Status              byte
 	DestinationAddress  byte
 	SourceAddress       byte
 	Checksum            byte
 	CommandResponseData []byte
+	parsedResponses     []IndividualCommandResponse
 }
 
-func (rf ExtendedResponseFrame) FrameToggle() byte {
+func (rf *ExtendedResponseFrame) FrameToggle() byte {
 	return rf.Status & FrameToggleBitMask
 }
 
-func (rf ExtendedResponseFrame) PreviousFrameStatus() byte {
+func (rf *ExtendedResponseFrame) PreviousFrameStatus() byte {
 	return rf.Status & PreviousFrameStatusBitMask
 }
 
-func (rf ExtendedResponseFrame) StateMachineState() byte {
+func (rf *ExtendedResponseFrame) StateMachineState() byte {
 	return rf.Status & StateMachineStateBitMask
 }
 
-func (rf ExtendedResponseFrame) CommandResponses() ([]IndividualCommandResponse, error) {
+func (rf *ExtendedResponseFrame) CommandResponses() []IndividualCommandResponse {
+	return rf.parsedResponses
+}
+
+func (rf *ExtendedResponseFrame) parseResponses() error {
 	var cmdIdx int
 	var responses []IndividualCommandResponse
 
@@ -162,46 +209,8 @@ func (rf ExtendedResponseFrame) CommandResponses() ([]IndividualCommandResponse,
 		}
 	}
 
-	return responses, nil
-}
-
-func (rf StandardResponseFrame) FrameToggle() byte {
-	return rf.Status & FrameToggleBitMask
-}
-
-func (rf StandardResponseFrame) PreviousFrameStatus() byte {
-	return rf.Status & PreviousFrameStatusBitMask
-}
-
-func (rf StandardResponseFrame) StateMachineState() byte {
-	return rf.Status & StateMachineStateBitMask
-}
-
-func (rf StandardResponseFrame) CommandResponses() ([]IndividualCommandResponse, error) {
-	var cmdIdx int
-	var responses []IndividualCommandResponse
-
-	for {
-		dataByteCount := rf.CommandResponseData[cmdIdx+1]
-		resp := IndividualCommandResponse{
-			Command:       rf.CommandResponseData[cmdIdx],
-			DataByteCount: dataByteCount,
-			Data:          make([]byte, dataByteCount),
-		}
-
-		dataStart := cmdIdx + 1 + 1 // starts after the command and data size
-		dataEnd := dataStart + int(dataByteCount)
-
-		copy(resp.Data, rf.CommandResponseData[dataStart:dataEnd])
-
-		responses = append(responses, resp)
-		cmdIdx = dataEnd + 1
-		if cmdIdx > len(rf.CommandResponseData) {
-			break
-		}
-	}
-
-	return responses, nil
+	rf.parsedResponses = responses
+	return nil
 }
 
 type IndividualCommandResponse struct {
@@ -210,65 +219,29 @@ type IndividualCommandResponse struct {
 	Data          []byte
 }
 
-type PMExtension struct {
-}
-
-func NewStandardFrame(command ShortCommand) []byte {
-	frame := []byte{StandardFrameStartFlag}
-	frame = append(frame, command.Bytes()...)
-	frame = append(frame, Checksum(command.Bytes()))
-	frame = append(frame, StopFrameFlag)
-	return frame
-}
-
-func NewExtendedFrame(command ShortCommand) []byte {
+func extendedFrame(b []byte) []byte {
 	frame := []byte{ExtendedFrameStartFlag}
 	frame = append(frame, ExtendedFrameAddressDefaultSecondary)
 	frame = append(frame, ExtendedFrameAddressPCHostPrimary)
-	frame = append(frame, command.Bytes()...)
-	frame = append(frame, Checksum(command.Bytes()))
+	frame = append(frame, b...)
+	frame = append(frame, Checksum(b))
 	frame = append(frame, StopFrameFlag)
 	return frame
 }
 
-// NewHIDReport converts the byte to an HID message and selects the appropriate byte size given the payload.
-func NewHIDReport(b []byte) []byte {
-	// hard-code to use report ID 2 for now
+func hidReport2(b []byte) []byte {
 	report := make([]byte, 121)
 	report[0] = 0x02
 	copy(report[1:], b)
 	return report
 }
 
-func CSAFEGetID() ShortCommand {
-	return ShortCommand{
-		ShortCommand: CSAFE_GETID_CMD,
-	}
+type Command[T any] interface {
+	Marshall() []byte
+	Unmarshall([]byte) (T, error)
 }
 
-func CSAFEGetVersion() ShortCommand {
-	return ShortCommand{
-		ShortCommand: CSAFE_GETVERSION_CMD,
-	}
-}
-
-func CSAFEGetPower() ShortCommand {
-	return ShortCommand{
-		ShortCommand: CSAFE_GETPOWER_CMD,
-	}
-}
-
-type GetPowerResponse struct {
-	StrokeWatts    int
-	UnitsSpecifier int
-}
-
-func ParseGetPowerResponse(b []byte) (GetPowerResponse, error) {
-	return GetPowerResponse{
-		StrokeWatts:    int(binary.LittleEndian.Uint16(b[:2])),
-		UnitsSpecifier: int(b[2]),
-	}, nil
-}
+type GetVersion struct{}
 
 type GetVersionResponse struct {
 	ManufacturerID  int
@@ -278,13 +251,65 @@ type GetVersionResponse struct {
 	FirmwareVersion int
 }
 
-func ParseGetVersionResponse(b []byte) (GetVersionResponse, error) {
+func (g GetVersion) Marshall() []byte {
+	return ShortCommand{
+		ShortCommand: CSAFE_GETVERSION_CMD,
+	}.Bytes()
+}
+
+func (g GetVersion) Unmarshall(b []byte) (GetVersionResponse, error) {
 	return GetVersionResponse{
 		ManufacturerID:  int(b[0]),
 		ClassID:         int(b[1]),
 		Model:           int(b[2]),
 		HardwareVersion: int(binary.LittleEndian.Uint16(b[3:5])),
 		FirmwareVersion: int(binary.LittleEndian.Uint16(b[5:7])),
+	}, nil
+}
+
+type GetPower struct{}
+
+type GetPowerResponse struct {
+	StrokeWatts    int
+	UnitsSpecifier int
+}
+
+func (g GetPower) Marshall() []byte {
+	return ShortCommand{
+		ShortCommand: CSAFE_GETPOWER_CMD,
+	}.Bytes()
+}
+
+func (g GetPower) Unmarshall(b []byte) (GetPowerResponse, error) {
+	return GetPowerResponse{
+		StrokeWatts:    int(binary.LittleEndian.Uint16(b[:2])),
+		UnitsSpecifier: int(b[2]),
+	}, nil
+}
+
+type GetID struct{}
+
+type GetIDResponse struct {
+	ASCIIDigit0 byte
+	ASCIIDigit1 byte
+	ASCIIDigit2 byte
+	ASCIIDigit3 byte
+	ASCIIDigit4 byte
+}
+
+func (g GetID) Marshall() []byte {
+	return ShortCommand{
+		ShortCommand: CSAFE_GETID_CMD,
+	}.Bytes()
+}
+
+func (g GetID) Unmarshall(b []byte) (GetIDResponse, error) {
+	return GetIDResponse{
+		ASCIIDigit0: b[0],
+		ASCIIDigit1: b[1],
+		ASCIIDigit2: b[2],
+		ASCIIDigit3: b[3],
+		ASCIIDigit4: b[4],
 	}, nil
 }
 
@@ -298,24 +323,6 @@ func findFrameEnd(frame []byte) (int, error) {
 	return 0, errors.New("could not find frame end")
 }
 
-func ParseStandardHIDResponse(b []byte) (StandardResponseFrame, error) {
-	// skip first byte, it's the HID report id
-	if b[1] != StandardFrameStartFlag {
-		return StandardResponseFrame{}, errors.New("could not find frame start")
-	}
-
-	frameStop, err := findFrameEnd(b)
-	if err != nil {
-		return StandardResponseFrame{}, err
-	}
-
-	return StandardResponseFrame{
-		Status:              b[2],
-		CommandResponseData: b[3 : frameStop-1],
-		Checksum:            b[frameStop-1],
-	}, nil
-}
-
 func ParseExtendedHIDResponse(b []byte) (ExtendedResponseFrame, error) {
 	// skip first byte, it's the HID report id
 	if b[1] != ExtendedFrameStartFlag {
@@ -327,11 +334,16 @@ func ParseExtendedHIDResponse(b []byte) (ExtendedResponseFrame, error) {
 		return ExtendedResponseFrame{}, err
 	}
 
-	return ExtendedResponseFrame{
+	frame := ExtendedResponseFrame{
 		DestinationAddress:  b[2],
 		SourceAddress:       b[3],
 		Status:              b[4],
 		CommandResponseData: b[5 : frameStop-1],
 		Checksum:            b[frameStop-1],
-	}, nil
+	}
+
+	if err := frame.parseResponses(); err != nil {
+		return ExtendedResponseFrame{}, errors.New("failed to parse command responses in frame")
+	}
+	return frame, nil
 }
