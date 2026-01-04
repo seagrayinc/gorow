@@ -41,15 +41,27 @@ func main() {
 
 	fmt.Printf("%+v\n", version)
 
-	time.Sleep(5 * time.Second)
+	status, err := performanceMonitor.GetStatus(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("%+v\n", status)
+
+	//power, err := performanceMonitor.GetStrokeStats(ctx)
+	//fmt.Printf("%+v\n", power)
+
+	//return
+
 	for {
-		power, err := performanceMonitor.GetPower(ctx)
+		time.Sleep(100 * time.Millisecond)
+		power, err := performanceMonitor.GetWorkoutState(ctx)
 		if err != nil {
-			fmt.Println(err)
+			//fmt.Println(err)
+			continue
 		}
 
 		fmt.Printf("%+v\n", power)
-		time.Sleep(250 * time.Millisecond)
 	}
 	return
 }
