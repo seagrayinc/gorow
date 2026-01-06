@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/seagrayinc/pm5-csafe/pkg/hid"
@@ -35,11 +36,107 @@ const (
 )
 
 type Transport struct {
-	Device hid.Device
+	Device        hid.Device
+	ReportLengths map[byte]int
 }
 
-func (t Transport) Close() error {
+func (t *Transport) Close() error {
 	return t.Device.Close()
+}
+
+func (t *Transport) Poll(ctx context.Context, reportChan <-chan hid.Report) <-chan ExtendedResponseFrame {
+	out := make(chan ExtendedResponseFrame)
+
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+
+			case report, ok := <-reportChan:
+				if !ok {
+					slog.Info("report channel closed")
+					return
+				}
+
+				n, ok := t.ReportLengths[report.ReportID]
+				if !ok {
+					slog.Warn("unknown report id", slog.Int("id", int(report.ReportID)))
+					continue
+				}
+
+				if n < 0 || n > len(report.Data) {
+					slog.Warn("report length out of range", slog.Int("expected", n), slog.Int("actual", len(report.Data)))
+					continue
+				}
+
+				frames, err := parseFrames(report.Data[:n])
+				if err != nil {
+					slog.Warn("CSAFE frame parsing failed", slog.Any("error", err))
+					continue
+				}
+
+				for _, f := range frames {
+					out <- f
+				}
+			}
+		}
+	}()
+	return out
+}
+
+func parseFrames(b []byte) ([]ExtendedResponseFrame, error) {
+	var frames []ExtendedResponseFrame
+
+	frameStartIdx := -1
+	frameEndIdx := -1
+	fmt.Println(EncodeReportToString(b))
+	for i := 0; i < len(b); i++ {
+		if b[i] == ExtendedFrameStartFlag {
+			frameStartIdx = i
+			continue
+		}
+
+		if b[i] == StopFrameFlag && frameStartIdx != -1 {
+			frameEndIdx = i
+			unstuffed, err := byteUnstuff(b[frameStartIdx+1 : frameEndIdx])
+			if err != nil {
+				frameStartIdx = -1
+				frameEndIdx = -1
+				slog.Warn("byte unstuffing failed", slog.Any("error", err))
+				continue
+			}
+
+			fmt.Println(EncodeReportToString(unstuffed))
+			frame := ExtendedResponseFrame{
+				ResponseStatus: ResponseStatus{
+					FrameToggle:         unstuffed[2] & FrameToggleBitMask,
+					PreviousFrameStatus: unstuffed[2] & PreviousFrameStatusBitMask,
+					StateMachineState:   unstuffed[2] & StateMachineStateBitMask,
+				},
+				DestinationAddress: unstuffed[0],
+				SourceAddress:      unstuffed[1],
+				Status:             unstuffed[2],
+				checksum:           unstuffed[len(unstuffed)-1],
+			}
+
+			checksum := Checksum(unstuffed[2 : len(unstuffed)-1])
+			if frame.checksum != checksum {
+				frameStartIdx = -1
+				frameEndIdx = -1
+
+				slog.Warn("checksum validation failed", slog.Any("payload", frame.checksum), slog.Any("computed", checksum))
+				continue
+			}
+
+			frames = append(frames, frame)
+			frameStartIdx = -1
+			frameEndIdx = -1
+		}
+	}
+
+	return frames, nil
 }
 
 func EncodeReportToString(b []byte) string {
@@ -145,7 +242,14 @@ func (sc ShortCommand) Bytes() []byte {
 	return []byte{sc.ShortCommand}
 }
 
+type ResponseStatus struct {
+	FrameToggle         byte
+	PreviousFrameStatus byte
+	StateMachineState   byte
+}
+
 type ExtendedResponseFrame struct {
+	ResponseStatus      ResponseStatus
 	Status              byte
 	DestinationAddress  byte
 	SourceAddress       byte
@@ -305,6 +409,46 @@ func byteUnstuff(input []byte) ([]byte, error) {
 	}
 
 	return out, nil
+}
+
+func ParseExtendedHIDResponse2(b []byte) (ExtendedResponseFrame, error) {
+	if b[0] != ExtendedFrameStartFlag {
+		return ExtendedResponseFrame{}, errors.New("could not find frame start")
+	}
+
+	frameStop, err := findFrameEnd(b)
+	if err != nil {
+		return ExtendedResponseFrame{}, err
+	}
+
+	unstuffed, err := byteUnstuff(b[1:frameStop])
+	if err != nil {
+		return ExtendedResponseFrame{}, fmt.Errorf("byte unstuffing failed: %w", err)
+	}
+
+	frame := ExtendedResponseFrame{
+		DestinationAddress: unstuffed[0],
+		SourceAddress:      unstuffed[1],
+		Status:             unstuffed[2],
+		checksum:           unstuffed[len(unstuffed)-1],
+	}
+
+	// checksum excludes address information, but includes status and command response data
+	if frame.checksum != Checksum(unstuffed[2:len(unstuffed)-1]) {
+		return ExtendedResponseFrame{}, fmt.Errorf("checksum mismatch")
+	}
+
+	// it's possible there was no command response data (e.g. CSAFE_GETSTATUS_CMD).
+	if len(unstuffed) <= 4 {
+		return frame, nil
+	}
+
+	frame.commandResponseData = unstuffed[3 : len(unstuffed)-2]
+	if err := frame.parseResponses(); err != nil {
+		return ExtendedResponseFrame{}, errors.New("failed to parse command responses in frame")
+	}
+
+	return frame, nil
 }
 
 func ParseExtendedHIDResponse(b []byte) (ExtendedResponseFrame, error) {

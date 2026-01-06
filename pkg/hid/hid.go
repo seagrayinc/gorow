@@ -1,11 +1,16 @@
 package hid
 
+import (
+	"context"
+)
+
 // Device represents an opened HID device capable of report I/O.
 type Device interface {
 	Write([]byte) (int, error) // send output report
 	Read([]byte) (int, error)  // read input report
 	Close() error
 	WriteReport(byte, []byte) error
+	Poll(ctx context.Context) <-chan Report
 }
 
 // Info represents a HID device descriptor.

@@ -3,7 +3,9 @@
 package hid
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -299,6 +301,48 @@ func (d *winDevice) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	return len(p), nil
+}
+
+// Report represents an individual report. The Data field includes the complete buffer based on the device's
+// descriptors.
+type Report struct {
+	ReportID byte
+	Data     []byte
+}
+
+// Poll starts a goroutine that constantly reads reports from the device and emits them to the returned channel.
+func (d *winDevice) Poll(ctx context.Context) <-chan Report {
+	out := make(chan Report)
+
+	go func() {
+		<-ctx.Done()
+		_ = d.Close()
+	}()
+
+	go func() {
+		defer close(out)
+
+		for {
+			buf := make([]byte, d.inputLen)
+			n, err := d.Read(buf)
+			if err != nil {
+				slog.Info("reading report failed", slog.Any("error", err))
+				return
+			}
+
+			if n == 0 {
+				continue
+			}
+
+			report := Report{
+				ReportID: buf[0],
+				Data:     append([]byte(nil), buf[1:n]...),
+			}
+
+			out <- report
+		}
+	}()
+	return out
 }
 
 func (d *winDevice) Read(p []byte) (int, error) {

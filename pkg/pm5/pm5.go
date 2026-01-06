@@ -16,6 +16,14 @@ const (
 	PM5PID      uint16 = 0x001E
 )
 
+var (
+	ReportLengths = map[byte]int{
+		0x01: 21,
+		0x02: 121,
+		0x04: 501,
+	}
+)
+
 type PM5 struct {
 	transport csafe.Transport
 }
