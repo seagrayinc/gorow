@@ -6,11 +6,9 @@ import (
 
 // Device represents an opened HID device capable of report I/O.
 type Device interface {
-	Write([]byte) (int, error) // send output report
-	Read([]byte) (int, error)  // read input report
 	Close() error
-	WriteReport(byte, []byte) error
-	Poll(ctx context.Context) <-chan Report
+	WriteReport(context.Context, Report) error
+	PollReports(context.Context) <-chan Report
 }
 
 // Info represents a HID device descriptor.

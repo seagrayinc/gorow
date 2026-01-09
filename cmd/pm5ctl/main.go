@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
 	"github.com/seagrayinc/pm5-csafe/pkg/hid"
@@ -35,11 +36,38 @@ func main() {
 		ReportLengths: pm5.ReportLengths,
 	}
 
-	reports := dev.Poll(ctx)
-	for f := range transport.Poll(ctx, reports) {
-		fmt.Printf("%+v\n", f)
+	err = transport.Send(ctx, pm5.GetID{})
+	if err != nil {
+		panic(err)
+	}
+
+	reports := dev.PollReports(ctx)
+	go func() {
+		for f := range transport.Poll(ctx, reports) {
+			fmt.Printf("%+v\n", f)
+		}
+	}()
+
+	time.Sleep(time.Second)
+	err = transport.Send(ctx, pm5.GetID{})
+	if err != nil {
+		panic(err)
 	}
 	<-ctx.Done()
+
+	//for {
+	//	if ctx.Err() != nil {
+	//		break
+	//	}
+	//
+	//	time.Sleep(5 * time.Second)
+	//	fmt.Printf("sending!")
+	//	if err := transport.Send(ctx, pm5.GetID{}); err != nil {
+	//		fmt.Printf("%+v\n", err)
+	//	}
+	//
+	//}
+	//<-ctx.Done()
 	//
 	//performanceMonitor, err := pm5.Open(mgr)
 	//if err != nil {

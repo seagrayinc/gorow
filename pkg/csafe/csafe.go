@@ -60,9 +60,9 @@ func (t *Transport) Poll(ctx context.Context, reportChan <-chan hid.Report) <-ch
 					return
 				}
 
-				n, ok := t.ReportLengths[report.ReportID]
+				n, ok := t.ReportLengths[report.ID]
 				if !ok {
-					slog.Warn("unknown report id", slog.Int("id", int(report.ReportID)))
+					slog.Warn("unknown report id", slog.Int("id", int(report.ID)))
 					continue
 				}
 
@@ -152,37 +152,8 @@ func EncodeReportToString(b []byte) string {
 	return builder.String()
 }
 
-func Send[T any](_ context.Context, t Transport, cmd Command[T]) (T, ExtendedResponseFrame, error) {
-	var zero T
-
-	report := hidReport1(extendedFrame(cmd.Marshall()))
-	fmt.Println(EncodeReportToString(report))
-	_, err := t.Device.Write(report)
-	if err != nil {
-		return zero, ExtendedResponseFrame{}, fmt.Errorf("send failed: %w", err)
-	}
-
-	resp := make([]byte, len(report))
-	_, err = t.Device.Read(resp)
-
-	fmt.Println(EncodeReportToString(resp))
-	frame, err := ParseExtendedHIDResponse(resp)
-	if err != nil {
-		return zero, ExtendedResponseFrame{}, fmt.Errorf("failed to parse extended frame: %w", err)
-	}
-
-	responses := frame.CommandResponses()
-	var commandResponse T
-	switch len(responses) {
-	case 0:
-		// If there's no command data to parse, we just unmarshall an empty byte array. This is really only necessary
-		// because of how CSAFE_GETSTATUS_CMD is implemented on the PM (it returns just the status and no command data).
-		commandResponse, err = cmd.Unmarshall([]byte{})
-	default:
-		commandResponse, err = cmd.Unmarshall(responses[0].Data)
-	}
-
-	return commandResponse, frame, err
+func (t *Transport) Send(ctx context.Context, c Command) error {
+	return t.Device.WriteReport(ctx, hidReport2(extendedFrame(c.Marshall())))
 }
 
 type ExtendedFrame struct {
@@ -320,30 +291,35 @@ func extendedFrame(b []byte) []byte {
 	return frame
 }
 
-func hidReport1(b []byte) []byte {
-	report := make([]byte, 21)
-	report[0] = 0x01
-	copy(report[1:], b)
-	return report
+func hidReport1(b []byte) hid.Report {
+	report := make([]byte, 20)
+	copy(report, b)
+	return hid.Report{
+		ID:   0x01,
+		Data: report,
+	}
 }
 
-func hidReport2(b []byte) []byte {
-	report := make([]byte, 121)
-	report[0] = 0x02
-	copy(report[1:], b)
-	return report
+func hidReport2(b []byte) hid.Report {
+	report := make([]byte, 120)
+	copy(report, b)
+	return hid.Report{
+		ID:   0x02,
+		Data: report,
+	}
 }
 
-func hidReport4(b []byte) []byte {
-	report := make([]byte, 501)
-	report[0] = 0x04
-	copy(report[1:], b)
-	return report
+func hidReport4(b []byte) hid.Report {
+	report := make([]byte, 500)
+	copy(report, b)
+	return hid.Report{
+		ID:   0x04,
+		Data: report,
+	}
 }
 
-type Command[T any] interface {
+type Command interface {
 	Marshall() []byte
-	Unmarshall([]byte) (T, error)
 }
 
 func findFrameEnd(frame []byte) (int, error) {
@@ -409,46 +385,6 @@ func byteUnstuff(input []byte) ([]byte, error) {
 	}
 
 	return out, nil
-}
-
-func ParseExtendedHIDResponse2(b []byte) (ExtendedResponseFrame, error) {
-	if b[0] != ExtendedFrameStartFlag {
-		return ExtendedResponseFrame{}, errors.New("could not find frame start")
-	}
-
-	frameStop, err := findFrameEnd(b)
-	if err != nil {
-		return ExtendedResponseFrame{}, err
-	}
-
-	unstuffed, err := byteUnstuff(b[1:frameStop])
-	if err != nil {
-		return ExtendedResponseFrame{}, fmt.Errorf("byte unstuffing failed: %w", err)
-	}
-
-	frame := ExtendedResponseFrame{
-		DestinationAddress: unstuffed[0],
-		SourceAddress:      unstuffed[1],
-		Status:             unstuffed[2],
-		checksum:           unstuffed[len(unstuffed)-1],
-	}
-
-	// checksum excludes address information, but includes status and command response data
-	if frame.checksum != Checksum(unstuffed[2:len(unstuffed)-1]) {
-		return ExtendedResponseFrame{}, fmt.Errorf("checksum mismatch")
-	}
-
-	// it's possible there was no command response data (e.g. CSAFE_GETSTATUS_CMD).
-	if len(unstuffed) <= 4 {
-		return frame, nil
-	}
-
-	frame.commandResponseData = unstuffed[3 : len(unstuffed)-2]
-	if err := frame.parseResponses(); err != nil {
-		return ExtendedResponseFrame{}, errors.New("failed to parse command responses in frame")
-	}
-
-	return frame, nil
 }
 
 func ParseExtendedHIDResponse(b []byte) (ExtendedResponseFrame, error) {

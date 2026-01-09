@@ -90,7 +90,7 @@ func newManager() (Manager, error) {
 	return &winManager{}, nil
 }
 
-func (m *winManager) List() ([]Info, error) {
+func (m *winManager) list() ([]Info, error) {
 	var hidGuid GUID
 	procHidD_GetHidGuid.Call(uintptr(unsafe.Pointer(&hidGuid)))
 
@@ -205,13 +205,13 @@ func (m *winManager) List() ([]Info, error) {
 	return devices, nil
 }
 
-func (d *winDevice) WriteReport(b byte, data []byte) error {
+func (d *winDevice) WriteReport(_ context.Context, r Report) error {
 	// PM5 expects reports of specific sizes (21, 63, or 121 bytes) based on frame length
 	// The frame already includes padding to the right size from BuildCSAFEReport
 	// So we send exactly len(data)+1 bytes (reportID + data)
-	report := make([]byte, len(data)+1)
-	report[0] = b
-	copy(report[1:], data)
+	report := make([]byte, len(r.Data)+1)
+	report[0] = r.ID
+	copy(report[1:], r.Data)
 
 	// Use WriteFile for interrupt OUT transfers
 	var written uint32
@@ -222,7 +222,7 @@ func (d *winDevice) WriteReport(b byte, data []byte) error {
 	return nil
 }
 
-func (m *winManager) Open(info Info) (Device, error) {
+func (m *winManager) open(info Info) (Device, error) {
 	pathPtr, err := windows.UTF16PtrFromString(info.Path)
 	if err != nil {
 		return nil, err
@@ -270,13 +270,13 @@ func (m *winManager) Open(info Info) (Device, error) {
 }
 
 func (m *winManager) OpenVIDPID(vendorID, productID uint16) (Device, error) {
-	devs, err := m.List()
+	devs, err := m.list()
 	if err != nil {
 		return nil, err
 	}
 	for _, d := range devs {
 		if d.VendorID == vendorID && d.ProductID == productID {
-			return m.Open(d)
+			return m.open(d)
 		}
 	}
 
@@ -291,27 +291,22 @@ type winDevice struct {
 	featureLen int
 }
 
-func (d *winDevice) Write(p []byte) (int, error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
-	rid := p[0]
-	data := p[1:]
-	if err := d.WriteOutput(rid, data); err != nil {
-		return 0, err
-	}
-	return len(p), nil
-}
-
 // Report represents an individual report. The Data field includes the complete buffer based on the device's
 // descriptors.
 type Report struct {
-	ReportID byte
-	Data     []byte
+	ID   byte
+	Data []byte
 }
 
-// Poll starts a goroutine that constantly reads reports from the device and emits them to the returned channel.
-func (d *winDevice) Poll(ctx context.Context) <-chan Report {
+func (r Report) Bytes() []byte {
+	b := make([]byte, len(r.Data)+1)
+	b[0] = r.ID
+	copy(b[1:], r.Data)
+	return b
+}
+
+// PollReports starts a goroutine that constantly reads reports from the device and emits them to the returned channel.
+func (d *winDevice) PollReports(ctx context.Context) <-chan Report {
 	out := make(chan Report)
 
 	go func() {
@@ -323,78 +318,23 @@ func (d *winDevice) Poll(ctx context.Context) <-chan Report {
 		defer close(out)
 
 		for {
+			var read uint32
 			buf := make([]byte, d.inputLen)
-			n, err := d.Read(buf)
+			err := windows.ReadFile(d.handle, buf, &read, nil)
 			if err != nil {
 				slog.Info("reading report failed", slog.Any("error", err))
 				return
 			}
 
-			if n == 0 {
-				continue
-			}
-
 			report := Report{
-				ReportID: buf[0],
-				Data:     append([]byte(nil), buf[1:n]...),
+				ID:   buf[0],
+				Data: append([]byte(nil), buf[1:]...),
 			}
 
 			out <- report
 		}
 	}()
 	return out
-}
-
-func (d *winDevice) Read(p []byte) (int, error) {
-	// Windows HID ReadFile requires buffer to match the device's input report length
-	// Use the actual report length from the device descriptor
-	var read uint32
-	buf := make([]byte, d.outputLen)
-	err := windows.ReadFile(d.handle, buf, &read, nil)
-	if err != nil {
-		return 0, fmt.Errorf("ReadFile failed: %v", err)
-	}
-
-	copy(p, buf)
-	return len(p), nil
-}
-
-func (d *winDevice) WriteOutput(reportID byte, data []byte) error {
-	// PM5 expects reports of specific sizes (21, 63, or 121 bytes) based on frame length
-	// The frame already includes padding to the right size from BuildCSAFEReport
-	// So we send exactly len(data)+1 bytes (reportID + data)
-	report := make([]byte, len(data)+1)
-	report[0] = reportID
-	copy(report[1:], data)
-
-	// Use WriteFile for interrupt OUT transfers
-	var written uint32
-	err := windows.WriteFile(d.handle, report, &written, nil)
-	if err != nil {
-		return fmt.Errorf("WriteFile failed: %v", err)
-	}
-	return nil
-}
-
-func (d *winDevice) ReadInput() ([]byte, error) {
-	// Windows HID ReadFile requires buffer to match the device's input report length
-	// Use the actual report length from the device descriptor
-	report := make([]byte, d.inputLen)
-	var read uint32
-	err := windows.ReadFile(d.handle, report, &read, nil)
-	if err != nil {
-		return nil, fmt.Errorf("ReadFile failed: %v", err)
-	}
-	// Report includes report ID at byte 0
-	// Return only the actual data received, excluding the report ID
-	if read > 1 {
-		return report[1:read], nil
-	}
-	return nil, nil
-}
-
-func (d *winDevice) ReportLens() (int, int, int) {
-	return d.inputLen, d.outputLen, d.featureLen
 }
 
 func (d *winDevice) Close() error {
