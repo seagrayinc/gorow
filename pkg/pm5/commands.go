@@ -2,16 +2,92 @@ package pm5
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
+	"log/slog"
 
 	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
 )
 
 const (
-	CSAFE_GETSTATUS_CMD = 0x80
+	CSAFE_SETUSERCFG1_CMD     = 0x1A
+	CSAFE_PM_GET_STROKESTATS  = 0x6E
+	CSAFE_GETSTATUS_CMD       = 0x80
+	CSAFE_PM_GET_WORKOUTSTATE = 0x8D
+	CSAFE_GETVERSION_CMD      = 0x91
+	CSAFE_GETID_CMD           = 0x92
+	CSAFE_GETPOWER_CMD        = 0xB4
+	CSAFE_PM_GET_STROKESTATE  = 0xBF
 )
 
-type GetVersion struct{}
+func ParseResponses(f csafe.ExtendedResponseFrame) ([]interface{}, error) {
+	var parsedResponses []interface{}
+
+	for _, resp := range f.CommandResponses {
+		switch resp.Command {
+		case CSAFE_GETVERSION_CMD:
+			parsedResp, err := ParseGetVersionResponse(resp.Data)
+			if err != nil {
+				return nil, err
+			}
+			parsedResponses = append(parsedResponses, parsedResp)
+
+		case CSAFE_GETPOWER_CMD:
+			parsedResp, err := ParseGetPowerResponse(resp.Data)
+			if err != nil {
+				return nil, err
+			}
+			parsedResponses = append(parsedResponses, parsedResp)
+
+		case CSAFE_GETID_CMD:
+			parsedResp, err := ParseGetIDResponse(resp.Data)
+			if err != nil {
+				return nil, err
+			}
+			parsedResponses = append(parsedResponses, parsedResp)
+
+		case CSAFE_SETUSERCFG1_CMD:
+			unwrapped, err := unwrap(resp.Data)
+			if err != nil {
+				return nil, err
+			}
+			switch unwrapped.Command {
+			case CSAFE_PM_GET_STROKESTATS:
+				parsedResp, err := ParseGetStrokeStatsResponse(unwrapped.Data)
+				if err != nil {
+					return nil, err
+				}
+				parsedResponses = append(parsedResponses, parsedResp)
+
+			case CSAFE_PM_GET_STROKESTATE:
+				parsedResp, err := ParseGetStrokeStateResponse(unwrapped.Data)
+				if err != nil {
+					return nil, err
+				}
+				parsedResponses = append(parsedResponses, parsedResp)
+
+			case CSAFE_PM_GET_WORKOUTSTATE:
+				parsedResp, err := ParseGetWorkoutStateResponse(unwrapped.Data)
+				if err != nil {
+					return nil, err
+				}
+				parsedResponses = append(parsedResponses, parsedResp)
+
+			default:
+				slog.Warn("unsupported wrapped command response", slog.String("command", hex.EncodeToString([]byte{unwrapped.Command})))
+			}
+
+		default:
+			slog.Warn("unsupported command response", slog.String("command", hex.EncodeToString([]byte{resp.Command})))
+		}
+	}
+
+	return parsedResponses, nil
+}
+
+func GetVersion() csafe.Command {
+	return csafe.ShortCommand(CSAFE_GETVERSION_CMD)
+}
 
 type GetVersionResponse struct {
 	ManufacturerID  int
@@ -21,13 +97,7 @@ type GetVersionResponse struct {
 	FirmwareVersion int
 }
 
-func (g GetVersion) Marshall() []byte {
-	return csafe.ShortCommand{
-		ShortCommand: 0x91,
-	}.Bytes()
-}
-
-func (g GetVersion) Unmarshall(b []byte) (GetVersionResponse, error) {
+func ParseGetVersionResponse(b []byte) (GetVersionResponse, error) {
 	return GetVersionResponse{
 		ManufacturerID:  int(b[0]),
 		ClassID:         int(b[1]),
@@ -37,27 +107,25 @@ func (g GetVersion) Unmarshall(b []byte) (GetVersionResponse, error) {
 	}, nil
 }
 
-type GetPower struct{}
+func GetPower() csafe.Command {
+	return csafe.ShortCommand(CSAFE_GETPOWER_CMD)
+}
 
 type GetPowerResponse struct {
 	StrokeWatts    int
 	UnitsSpecifier int
 }
 
-func (g GetPower) Marshall() []byte {
-	return csafe.ShortCommand{
-		ShortCommand: 0xB4,
-	}.Bytes()
-}
-
-func (g GetPower) Unmarshall(b []byte) (GetPowerResponse, error) {
+func ParseGetPowerResponse(b []byte) (GetPowerResponse, error) {
 	return GetPowerResponse{
 		StrokeWatts:    int(binary.LittleEndian.Uint16(b[:2])),
 		UnitsSpecifier: int(b[2]),
 	}, nil
 }
 
-type GetID struct{}
+func GetID() csafe.Command {
+	return csafe.ShortCommand(CSAFE_GETID_CMD)
+}
 
 type GetIDResponse struct {
 	ASCIIDigit0 byte
@@ -67,13 +135,7 @@ type GetIDResponse struct {
 	ASCIIDigit4 byte
 }
 
-func (g GetID) Marshall() []byte {
-	return csafe.ShortCommand{
-		ShortCommand: 0x92,
-	}.Bytes()
-}
-
-func (g GetID) Unmarshall(b []byte) (GetIDResponse, error) {
+func ParseGetIDResponse(b []byte) (GetIDResponse, error) {
 	return GetIDResponse{
 		ASCIIDigit0: b[0],
 		ASCIIDigit1: b[1],
@@ -97,25 +159,11 @@ const (
 	MachineStateOffline StateMachineState = 0x09
 )
 
-type GetStatus struct{}
-
-type GetStatusResponse struct {
-	Status StateMachineState
+func GetStrokeStats() csafe.Command {
+	return wrap(csafe.LongCommand(CSAFE_PM_GET_STROKESTATS, []byte{0}))
 }
 
-func (g GetStatus) Marshall() []byte {
-	return csafe.ShortCommand{
-		ShortCommand: CSAFE_GETSTATUS_CMD,
-	}.Bytes()
-}
-
-func (g GetStatus) Unmarshall(_ []byte) (GetStatusResponse, error) {
-	return GetStatusResponse{}, nil
-}
-
-type GetStrokeStats struct{}
-
-func (g GetStrokeStats) Unmarshall(in []byte) (GetStrokeStatsResponse, error) {
+func ParseGetStrokeStatsResponse(in []byte) (GetStrokeStatsResponse, error) {
 	b := in[2:] // TODO: this should probably be done at the transport layer.... It's required here because the proprietary commands are wrapped
 
 	if len(b) < 16 {
@@ -147,21 +195,15 @@ type GetStrokeStatsResponse struct {
 	WorkPerStroke      int
 }
 
-func (g GetStrokeStats) Marshall() []byte {
-	return csafe.GetPMDataCommand(csafe.NewLongCommand(0x6E, []byte{0}))
+func GetStrokeState() csafe.Command {
+	return wrap(csafe.ShortCommand(CSAFE_PM_GET_STROKESTATE))
 }
-
-type GetStrokeState struct{}
 
 type GetStrokeStateResponse struct {
 	StrokeState int
 }
 
-func (g GetStrokeState) Marshall() []byte {
-	return csafe.GetPMDataCommand(csafe.ShortCommand{ShortCommand: 0xBF})
-}
-
-func (g GetStrokeState) Unmarshall(b []byte) (GetStrokeStateResponse, error) {
+func ParseGetStrokeStateResponse(b []byte) (GetStrokeStateResponse, error) {
 	//Stroke State
 	//typedef enum {
 	//	STROKESTATE_WAITING_FOR_WHEEL_TO_REACH_MIN_SPEED_STATE, /**< FW to reach min speed state (0). */
@@ -170,20 +212,18 @@ func (g GetStrokeState) Unmarshall(b []byte) (GetStrokeStateResponse, error) {
 	//	STROKESTATE_DWELLING_AFTER_DRIVE_STATE, /**< Dwelling after drive state (3). */
 	//	STROKESTATE_RECOVERY_STATE /**< Recovery state (4). */
 	//} OBJ_STROKESTATE_T;
-	return GetStrokeStateResponse{StrokeState: int(b[2])}, nil
+	return GetStrokeStateResponse{StrokeState: int(b[0])}, nil
 }
 
-type GetWorkoutState struct{}
+func GetWorkoutState() csafe.Command {
+	return wrap(csafe.ShortCommand(CSAFE_PM_GET_WORKOUTSTATE))
+}
 
 type GetWorkoutStateResponse struct {
 	WorkoutState int
 }
 
-func (g GetWorkoutState) Marshall() []byte {
-	return csafe.GetPMDataCommand(csafe.ShortCommand{ShortCommand: 0x8D})
-}
-
-func (g GetWorkoutState) Unmarshall(b []byte) (GetWorkoutStateResponse, error) {
+func ParseGetWorkoutStateResponse(b []byte) (GetWorkoutStateResponse, error) {
 	//typedef enum {
 	//	WORKOUTSTATE_WAITTOBEGIN, /**< Wait to begin state (0). */
 	//	WORKOUTSTATE_WORKOUTROW, /**< Workout row state (1). */
@@ -201,4 +241,16 @@ func (g GetWorkoutState) Unmarshall(b []byte) (GetWorkoutStateResponse, error) {
 	//	WORKOUTSTATE_REARM, /**< Workout rearm state (13). */
 	//} OBJ_WORKOUTSTATE_T;
 	return GetWorkoutStateResponse{WorkoutState: int(b[2])}, nil
+}
+
+func wrap(c csafe.Command) csafe.Command {
+	return csafe.LongCommand(CSAFE_SETUSERCFG1_CMD, c)
+}
+
+func unwrap(b []byte) (csafe.Response, error) {
+	responses := csafe.ParseResponses(b)
+	if len(responses) < 1 {
+		return csafe.Response{}, errors.New("malformed response")
+	}
+	return responses[0], nil
 }

@@ -36,15 +36,32 @@ func main() {
 		ReportLengths: pm5.ReportLengths,
 	}
 
-	err = transport.Send(ctx, pm5.GetID{})
+	err = transport.Send(ctx, pm5.GetID())
 	if err != nil {
 		panic(err)
 	}
 
 	reports := dev.PollReports(ctx)
 	go func() {
+		var prevStrokeState int
 		for f := range transport.Poll(ctx, reports) {
-			fmt.Printf("%+v\n", f)
+			parsed, err := pm5.ParseResponses(f)
+			if err != nil {
+				fmt.Printf("error parsing response: %+v\n", err)
+				continue
+			}
+			for _, r := range parsed {
+				ss, ok := r.(pm5.GetStrokeStateResponse)
+				if !ok {
+					continue
+				}
+
+				if prevStrokeState == 4 && ss.StrokeState == 2 {
+					fmt.Println("new stroke!")
+				}
+
+				prevStrokeState = ss.StrokeState
+			}
 		}
 	}()
 
@@ -53,9 +70,8 @@ func main() {
 			break
 		}
 
-		time.Sleep(5 * time.Second)
-		fmt.Printf("sending!")
-		if err := transport.Send(ctx, pm5.GetID{}); err != nil {
+		time.Sleep(75 * time.Millisecond)
+		if err := transport.Send(ctx, pm5.GetStrokeState()); err != nil {
 			fmt.Printf("%+v\n", err)
 		}
 
