@@ -4,6 +4,7 @@ package hid
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"unsafe"
@@ -189,7 +190,7 @@ func (m *winManager) list() ([]Info, error) {
 			product = windows.UTF16ToString(prod)
 		}
 
-		windows.CloseHandle(h)
+		_ = windows.CloseHandle(h)
 
 		if r != 0 {
 			devices = append(devices, Info{
@@ -205,7 +206,7 @@ func (m *winManager) list() ([]Info, error) {
 	return devices, nil
 }
 
-func (d *winDevice) WriteReport(_ context.Context, r Report) error {
+func (d *winDevice) WriteReport(ctx context.Context, r Report) error {
 	// PM5 expects reports of specific sizes (21, 63, or 121 bytes) based on frame length
 	// The frame already includes padding to the right size from BuildCSAFEReport
 	// So we send exactly len(data)+1 bytes (reportID + data)
@@ -213,11 +214,43 @@ func (d *winDevice) WriteReport(_ context.Context, r Report) error {
 	report[0] = r.ID
 	copy(report[1:], r.Data)
 
-	// Use WriteFile for interrupt OUT transfers
-	var written uint32
-	err := windows.WriteFile(d.handle, report, &written, nil)
+	// Create event for overlapped I/O
+	event, err := windows.CreateEvent(nil, 1, 0, nil) // Manual reset, initially non-signaled
 	if err != nil {
-		return fmt.Errorf("WriteFile failed: %v", err)
+		return fmt.Errorf("CreateEvent failed: %v", err)
+	}
+	defer windows.CloseHandle(event)
+
+	var overlapped windows.Overlapped
+	overlapped.HEvent = event
+
+	// Start async write
+	var written uint32
+	err = windows.WriteFile(d.handle, report, &written, &overlapped)
+	if err != nil {
+		if err != windows.ERROR_IO_PENDING {
+			return fmt.Errorf("WriteFile failed: %v", err)
+		}
+		// I/O is pending, wait for completion or context cancellation
+		select {
+		case <-ctx.Done():
+			_ = windows.CancelIoEx(d.handle, &overlapped)
+			return ctx.Err()
+		default:
+		}
+
+		// Wait for the event
+		result, err := windows.WaitForSingleObject(event, windows.INFINITE)
+		if result != windows.WAIT_OBJECT_0 {
+			_ = windows.CancelIoEx(d.handle, &overlapped)
+			return fmt.Errorf("WaitForSingleObject failed: %v", err)
+		}
+
+		// Get the result
+		err = windows.GetOverlappedResult(d.handle, &overlapped, &written, false)
+		if err != nil {
+			return fmt.Errorf("GetOverlappedResult failed: %v", err)
+		}
 	}
 	return nil
 }
@@ -234,7 +267,7 @@ func (m *winManager) open(info Info) (Device, error) {
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
 		nil,
 		windows.OPEN_EXISTING,
-		0, // Synchronous I/O
+		windows.FILE_FLAG_OVERLAPPED, // Enable overlapped I/O
 		0,
 	)
 	if err != nil {
@@ -245,7 +278,7 @@ func (m *winManager) open(info Info) (Device, error) {
 	var preparsedData uintptr
 	r, _, _ := procHidD_GetPreparsedData.Call(uintptr(h), uintptr(unsafe.Pointer(&preparsedData)))
 	if r == 0 {
-		windows.CloseHandle(h)
+		_ = windows.CloseHandle(h)
 		return nil, fmt.Errorf("HidD_GetPreparsedData failed")
 	}
 
@@ -310,28 +343,88 @@ func (d *winDevice) PollReports(ctx context.Context) <-chan Report {
 	out := make(chan Report)
 
 	go func() {
-		<-ctx.Done()
-		_ = d.Close()
-	}()
-
-	go func() {
 		defer close(out)
 
+		// Create event for overlapped read I/O
+		event, err := windows.CreateEvent(nil, 1, 0, nil) // Manual reset, initially non-signaled
+		if err != nil {
+			slog.Error("CreateEvent failed", slog.Any("error", err))
+			return
+		}
+		defer windows.CloseHandle(event)
+
 		for {
-			var read uint32
-			buf := make([]byte, d.inputLen)
-			err := windows.ReadFile(d.handle, buf, &read, nil)
-			if err != nil {
-				slog.Info("reading report failed", slog.Any("error", err))
+			// Check if context is already cancelled
+			select {
+			case <-ctx.Done():
 				return
+			default:
 			}
 
-			report := Report{
-				ID:   buf[0],
-				Data: append([]byte(nil), buf[1:]...),
+			buf := make([]byte, d.inputLen)
+			var overlapped windows.Overlapped
+			overlapped.HEvent = event
+
+			// Reset the event before starting the read
+			_ = windows.ResetEvent(event)
+
+			// Start async read
+			var read uint32
+			err := windows.ReadFile(d.handle, buf, &read, &overlapped)
+			if err != nil {
+				if !errors.Is(err, windows.ERROR_IO_PENDING) {
+					slog.Info("ReadFile failed", slog.Any("error", err))
+					return
+				}
+
+				// I/O is pending, wait for completion or context cancellation
+				// Use a goroutine to handle context cancellation while waiting
+				done := make(chan struct{})
+				var waitErr error
+				var waitResult uint32
+
+				go func() {
+					waitResult, waitErr = windows.WaitForSingleObject(event, windows.INFINITE)
+					close(done)
+				}()
+
+				select {
+				case <-ctx.Done():
+					// Cancel the pending I/O operation
+					_ = windows.CancelIoEx(d.handle, &overlapped)
+					<-done // Wait for the wait to complete
+					return
+				case <-done:
+					if waitResult != windows.WAIT_OBJECT_0 {
+						slog.Info("WaitForSingleObject failed", slog.Any("error", waitErr))
+						return
+					}
+				}
+
+				// Get the result
+				err = windows.GetOverlappedResult(d.handle, &overlapped, &read, false)
+				if err != nil {
+					// ERROR_OPERATION_ABORTED means we cancelled - exit gracefully
+					if errors.Is(err, windows.ERROR_OPERATION_ABORTED) {
+						return
+					}
+					slog.Info("GetOverlappedResult failed", slog.Any("error", err))
+					return
+				}
 			}
 
-			out <- report
+			if read > 0 {
+				report := Report{
+					ID:   buf[0],
+					Data: append([]byte(nil), buf[1:read]...),
+				}
+
+				select {
+				case out <- report:
+				case <-ctx.Done():
+					return
+				}
+			}
 		}
 	}()
 	return out
