@@ -163,13 +163,7 @@ func GetStrokeStats() csafe.Command {
 	return wrap(csafe.LongCommand(CSAFE_PM_GET_STROKESTATS, []byte{0}))
 }
 
-func ParseGetStrokeStatsResponse(in []byte) (GetStrokeStatsResponse, error) {
-	b := in[2:] // TODO: this should probably be done at the transport layer.... It's required here because the proprietary commands are wrapped
-
-	if len(b) < 16 {
-		return GetStrokeStatsResponse{}, errors.New("malformed response")
-	}
-
+func ParseGetStrokeStatsResponse(b []byte) (GetStrokeStatsResponse, error) {
 	return GetStrokeStatsResponse{
 		StrokeDistance:     int(binary.LittleEndian.Uint16(b[0:2])),
 		StrokeDriveTime:    int(b[2]),
@@ -220,7 +214,25 @@ func GetWorkoutState() csafe.Command {
 }
 
 type GetWorkoutStateResponse struct {
-	WorkoutState int
+	WorkoutState       int
+	WorkoutStateString string
+}
+
+var WorkoutStateMap = map[int]string{
+	0:  "Wait to begin",
+	1:  "Workout row",
+	2:  "Countdown pause",
+	3:  "Interval rest",
+	4:  "Interval work time",
+	5:  "Interval work distance",
+	6:  "Interval rest end to work time",
+	7:  "Interval rest end to work distance",
+	8:  "Interval work time to rest",
+	9:  "Interval work distance to rest",
+	10: "Workout end",
+	11: "Workout terminate",
+	12: "Workout logged",
+	13: "Workout rearm",
 }
 
 func ParseGetWorkoutStateResponse(b []byte) (GetWorkoutStateResponse, error) {
@@ -240,7 +252,7 @@ func ParseGetWorkoutStateResponse(b []byte) (GetWorkoutStateResponse, error) {
 	//	WORKOUTSTATE_WORKOUTLOGGED, /**< Workout logged state (12). */
 	//	WORKOUTSTATE_REARM, /**< Workout rearm state (13). */
 	//} OBJ_WORKOUTSTATE_T;
-	return GetWorkoutStateResponse{WorkoutState: int(b[2])}, nil
+	return GetWorkoutStateResponse{WorkoutState: int(b[2]), WorkoutStateString: WorkoutStateMap[int(b[2])]}, nil
 }
 
 func wrap(c csafe.Command) csafe.Command {

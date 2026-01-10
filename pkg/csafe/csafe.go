@@ -3,9 +3,12 @@ package csafe
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/seagrayinc/pm5-csafe/pkg/hid"
 )
@@ -37,6 +40,15 @@ const (
 type Transport struct {
 	Device        hid.Device
 	ReportLengths map[byte]int
+	SendTimeout   time.Duration // Minimum time between sends if no message received (default 100ms)
+	SendBuffer    int           // Size of send buffer (default 100)
+
+	mu                    sync.Mutex
+	lastSendTime          time.Time
+	receivedSinceLastSend bool
+
+	sendOnce sync.Once
+	cmdChan  chan Command
 }
 
 func (t *Transport) Close() error {
@@ -58,6 +70,11 @@ func (t *Transport) Poll(ctx context.Context, reportChan <-chan hid.Report) <-ch
 					slog.Info("report channel closed")
 					return
 				}
+
+				// Signal that we've received a message
+				t.mu.Lock()
+				t.receivedSinceLastSend = true
+				t.mu.Unlock()
 
 				n, ok := t.ReportLengths[report.ID]
 				if !ok {
@@ -153,8 +170,76 @@ func EncodeReportToString(b []byte) string {
 
 type Command []byte
 
-func (t *Transport) Send(ctx context.Context, c Command) error {
-	return t.Device.WriteReport(ctx, hidReport2(extendedFrame(c)))
+// StartSender starts the background goroutine that processes buffered commands.
+// It must be called before Send. The context controls the lifetime of the sender.
+func (t *Transport) StartSender(ctx context.Context) {
+	t.sendOnce.Do(func() {
+		bufSize := t.SendBuffer
+		if bufSize <= 0 {
+			bufSize = 100
+		}
+		t.cmdChan = make(chan Command, bufSize)
+
+		go t.sendLoop(ctx)
+	})
+}
+
+func (t *Transport) sendLoop(ctx context.Context) {
+	timeout := t.SendTimeout
+	if timeout == 0 {
+		timeout = 100 * time.Millisecond
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case cmd, ok := <-t.cmdChan:
+			if !ok {
+				return
+			}
+
+			// Wait until we can send
+			for {
+				t.mu.Lock()
+				canSend := t.receivedSinceLastSend || t.lastSendTime.IsZero() || time.Since(t.lastSendTime) >= timeout
+				if canSend {
+					t.lastSendTime = time.Now()
+					t.receivedSinceLastSend = false
+					t.mu.Unlock()
+					break
+				}
+				waitTime := timeout - time.Since(t.lastSendTime)
+				t.mu.Unlock()
+
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(waitTime):
+					// Continue loop to re-check conditions
+				}
+			}
+
+			if err := t.Device.WriteReport(ctx, hidReport2(extendedFrame(cmd))); err != nil {
+				slog.Warn("failed to write report", slog.Any("error", err))
+			}
+		}
+	}
+}
+
+// Send buffers commands for sending. It is non-blocking.
+// StartSender must be called before Send.
+func (t *Transport) Send(_ context.Context, commands ...Command) error {
+	for _, c := range commands {
+		select {
+		case t.cmdChan <- c:
+		default:
+			slog.Warn("send buffer full, dropping command")
+			return errors.New("send buffer full")
+		}
+	}
+
+	return nil
 }
 
 type ExtendedFrame struct {

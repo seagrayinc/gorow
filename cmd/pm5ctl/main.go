@@ -34,7 +34,11 @@ func main() {
 	transport := csafe.Transport{
 		Device:        dev,
 		ReportLengths: pm5.ReportLengths,
+		SendTimeout:   75 * time.Millisecond,
+		SendBuffer:    100,
 	}
+
+	transport.StartSender(ctx)
 
 	err = transport.Send(ctx, pm5.GetID())
 	if err != nil {
@@ -51,16 +55,24 @@ func main() {
 				continue
 			}
 			for _, r := range parsed {
-				ss, ok := r.(pm5.GetStrokeStateResponse)
-				if !ok {
-					continue
+				switch resp := r.(type) {
+				case pm5.GetIDResponse:
+					fmt.Printf("PM ID: %s%s%s%s%s\n", string(resp.ASCIIDigit0), string(resp.ASCIIDigit1), string(resp.ASCIIDigit2), string(resp.ASCIIDigit3), string(resp.ASCIIDigit4))
+				case pm5.GetVersionResponse:
+				case pm5.GetPowerResponse:
+					fmt.Printf("Power: %d W\n", resp.StrokeWatts)
+				case pm5.GetStrokeStatsResponse:
+					fmt.Printf("%+v\n", resp)
+				case pm5.GetWorkoutStateResponse:
+					fmt.Printf("Workout state: %d\n", resp.WorkoutStateString)
+				case pm5.GetStrokeStateResponse:
+					if prevStrokeState > 2 && resp.StrokeState == 2 {
+						fmt.Println("new stroke!")
+						_ = transport.Send(ctx, pm5.GetStrokeStats())
+					}
+					prevStrokeState = resp.StrokeState
 				}
 
-				if prevStrokeState == 4 && ss.StrokeState == 2 {
-					fmt.Println("new stroke!")
-				}
-
-				prevStrokeState = ss.StrokeState
 			}
 		}
 	}()
