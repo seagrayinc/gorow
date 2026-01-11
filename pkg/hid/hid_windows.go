@@ -293,6 +293,8 @@ func (m *winManager) open(info Info) (Device, error) {
 		return nil, fmt.Errorf("HidP_GetCaps failed: 0x%X", r)
 	}
 
+	fmt.Printf("%+v\n", caps)
+
 	return &winDevice{
 		handle:     h,
 		path:       info.Path,

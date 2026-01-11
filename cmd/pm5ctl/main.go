@@ -13,6 +13,22 @@ import (
 	"github.com/seagrayinc/pm5-csafe/pkg/pm5"
 )
 
+type Workout struct {
+	LastWorkoutState pm5.GetWorkoutStateResponse
+	LastStrokeStats  pm5.GetStrokeStatsResponse
+	LastStrokeState  pm5.GetStrokeStateResponse
+}
+
+func init() {
+	//slog.SetDefault(
+	//	slog.New(
+	//		slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	//			Level: slog.LevelDebug,
+	//		}),
+	//	),
+	//)
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -34,7 +50,7 @@ func main() {
 	transport := csafe.Transport{
 		Device:        dev,
 		ReportLengths: pm5.ReportLengths,
-		SendTimeout:   75 * time.Millisecond,
+		SendTimeout:   50 * time.Millisecond,
 		SendBuffer:    100,
 	}
 
@@ -46,8 +62,9 @@ func main() {
 	}
 
 	reports := dev.PollReports(ctx)
+
 	go func() {
-		var prevStrokeState int
+		var workout Workout
 		for f := range transport.Poll(ctx, reports) {
 			parsed, err := pm5.ParseResponses(f)
 			if err != nil {
@@ -64,13 +81,16 @@ func main() {
 				case pm5.GetStrokeStatsResponse:
 					fmt.Printf("%+v\n", resp)
 				case pm5.GetWorkoutStateResponse:
-					fmt.Printf("Workout state: %d\n", resp.WorkoutStateString)
-				case pm5.GetStrokeStateResponse:
-					if prevStrokeState > 2 && resp.StrokeState == 2 {
-						fmt.Println("new stroke!")
-						_ = transport.Send(ctx, pm5.GetStrokeStats())
+					if workout.LastWorkoutState.WorkoutState != resp.WorkoutState {
+						workout.LastWorkoutState = resp
+						fmt.Println("workout state changed: ", resp.WorkoutStateString)
 					}
-					prevStrokeState = resp.StrokeState
+				case pm5.GetStrokeStateResponse:
+					if workout.LastStrokeState.StrokeState > 2 && resp.StrokeState == 2 {
+						fmt.Println("new stroke!")
+						_ = transport.Send(ctx, pm5.GetStrokeStats(), pm5.GetPower())
+					}
+					workout.LastStrokeState = resp
 				}
 
 			}
@@ -83,7 +103,7 @@ func main() {
 		}
 
 		time.Sleep(75 * time.Millisecond)
-		if err := transport.Send(ctx, pm5.GetStrokeState()); err != nil {
+		if err := transport.Send(ctx, pm5.GetStrokeState(), pm5.GetWorkoutState()); err != nil {
 			fmt.Printf("%+v\n", err)
 		}
 

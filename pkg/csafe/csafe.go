@@ -76,18 +76,12 @@ func (t *Transport) Poll(ctx context.Context, reportChan <-chan hid.Report) <-ch
 				t.receivedSinceLastSend = true
 				t.mu.Unlock()
 
-				n, ok := t.ReportLengths[report.ID]
-				if !ok {
+				if _, ok := t.ReportLengths[report.ID]; !ok {
 					slog.Warn("unknown report id", slog.Int("id", int(report.ID)))
 					continue
 				}
 
-				if n < 0 || n > len(report.Data) {
-					slog.Warn("report length out of range", slog.Int("expected", n), slog.Int("actual", len(report.Data)))
-					continue
-				}
-
-				frames, err := parseFrames(report.Data[:n])
+				frames, err := parseFrames(report.Data)
 				if err != nil {
 					slog.Warn("CSAFE frame parsing failed", slog.Any("error", err))
 					continue
@@ -199,6 +193,21 @@ func (t *Transport) sendLoop(ctx context.Context) {
 				return
 			}
 
+			// Collect this command and any others available in the buffer
+			commands := []Command{cmd}
+		collectLoop:
+			for {
+				select {
+				case c, ok := <-t.cmdChan:
+					if !ok {
+						break collectLoop
+					}
+					commands = append(commands, c)
+				default:
+					break collectLoop
+				}
+			}
+
 			// Wait until we can send
 			for {
 				t.mu.Lock()
@@ -220,10 +229,43 @@ func (t *Transport) sendLoop(ctx context.Context) {
 				}
 			}
 
-			if err := t.Device.WriteReport(ctx, hidReport2(extendedFrame(cmd))); err != nil {
+			// Always use report ID 0x02 and length 120 for sending. Report ID 0x01 is too short for long commands and
+			// causes checksum failures on response (which also comes on report ID 0x01). Report ID 0x04 doesn't always
+			// result in a response.
+			report := hidReport(0x02, 120, extendedFrame(commands))
+			if err := t.Device.WriteReport(ctx, report); err != nil {
 				slog.Warn("failed to write report", slog.Any("error", err))
 			}
 		}
+	}
+}
+
+// extendedFrame creates a frame containing multiple commands
+func extendedFrame(commands []Command) []byte {
+	var cmdBytes []byte
+	for _, cmd := range commands {
+		cmdBytes = append(cmdBytes, cmd...)
+	}
+
+	var frameContents []byte
+	frameContents = append(frameContents, ExtendedFrameAddressDefaultSecondary)
+	frameContents = append(frameContents, ExtendedFrameAddressPCHostPrimary)
+	frameContents = append(frameContents, cmdBytes...)
+	frameContents = append(frameContents, Checksum(cmdBytes))
+
+	frame := []byte{ExtendedFrameStartFlag}
+	frame = append(frame, byteStuff(frameContents)...)
+	frame = append(frame, StopFrameFlag)
+	return frame
+}
+
+// hidReport creates a report with the given ID and length
+func hidReport(id byte, length int, data []byte) hid.Report {
+	report := make([]byte, length)
+	copy(report, data)
+	return hid.Report{
+		ID:   id,
+		Data: report,
 	}
 }
 
@@ -233,6 +275,7 @@ func (t *Transport) Send(_ context.Context, commands ...Command) error {
 	for _, c := range commands {
 		select {
 		case t.cmdChan <- c:
+			slog.Debug("sending command", slog.String("command", hex.EncodeToString(c)))
 		default:
 			slog.Warn("send buffer full, dropping command")
 			return errors.New("send buffer full")
@@ -296,13 +339,13 @@ func ParseResponses(frameContents []byte) []Response {
 			Data:          make([]byte, dataByteCount),
 		}
 
-		dataStart := cmdIdx + 1 + 1 // starts after the command and data size
-		dataEnd := dataStart + int(dataByteCount)
+		dataStart := cmdIdx + 1 + 1                   // starts after the command and data size
+		dataEnd := dataStart + int(dataByteCount) - 1 // inclusive end index
 
-		copy(resp.Data, frameContents[dataStart:dataEnd])
+		copy(resp.Data, frameContents[dataStart:dataEnd+1])
 		responses = append(responses, resp)
 		cmdIdx = dataEnd + 1
-		if cmdIdx > len(frameContents) {
+		if cmdIdx >= len(frameContents) {
 			break
 		}
 	}
@@ -314,46 +357,6 @@ type Response struct {
 	Command       byte
 	DataByteCount byte
 	Data          []byte
-}
-
-func extendedFrame(b []byte) []byte {
-	var frameContents []byte
-	frameContents = append(frameContents, ExtendedFrameAddressDefaultSecondary)
-	frameContents = append(frameContents, ExtendedFrameAddressPCHostPrimary)
-	frameContents = append(frameContents, b...)
-	frameContents = append(frameContents, Checksum(b))
-
-	frame := []byte{ExtendedFrameStartFlag}
-	frame = append(frame, byteStuff(frameContents)...)
-	frame = append(frame, StopFrameFlag)
-	return frame
-}
-
-func hidReport1(b []byte) hid.Report {
-	report := make([]byte, 20)
-	copy(report, b)
-	return hid.Report{
-		ID:   0x01,
-		Data: report,
-	}
-}
-
-func hidReport2(b []byte) hid.Report {
-	report := make([]byte, 120)
-	copy(report, b)
-	return hid.Report{
-		ID:   0x02,
-		Data: report,
-	}
-}
-
-func hidReport4(b []byte) hid.Report {
-	report := make([]byte, 500)
-	copy(report, b)
-	return hid.Report{
-		ID:   0x04,
-		Data: report,
-	}
 }
 
 func byteStuff(input []byte) []byte {

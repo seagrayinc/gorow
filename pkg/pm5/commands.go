@@ -252,7 +252,7 @@ func ParseGetWorkoutStateResponse(b []byte) (GetWorkoutStateResponse, error) {
 	//	WORKOUTSTATE_WORKOUTLOGGED, /**< Workout logged state (12). */
 	//	WORKOUTSTATE_REARM, /**< Workout rearm state (13). */
 	//} OBJ_WORKOUTSTATE_T;
-	return GetWorkoutStateResponse{WorkoutState: int(b[2]), WorkoutStateString: WorkoutStateMap[int(b[2])]}, nil
+	return GetWorkoutStateResponse{WorkoutState: int(b[0]), WorkoutStateString: WorkoutStateMap[int(b[0])]}, nil
 }
 
 func wrap(c csafe.Command) csafe.Command {
