@@ -328,6 +328,10 @@ type ExtendedResponseFrame struct {
 }
 
 func ParseResponses(frameContents []byte) []Response {
+	if len(frameContents) == 0 {
+		return nil
+	}
+
 	var cmdIdx int
 	var responses []Response
 
