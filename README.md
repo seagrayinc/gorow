@@ -77,6 +77,7 @@ func main() {
 | `CSAFE_GOREADY_CMD` | `pm5.GoReady()` | Set machine to ready state |
 | `CSAFE_BADID_CMD` | `pm5.BadID()` | Signal bad ID |
 | `CSAFE_GETUNITS_CMD` | `pm5.GetUnits()` | Get units type |
+| `CSAFE_GETSERIAL_CMD` | `pm5.GetSerial()` | Get serial number |
 | `CSAFE_GETID_CMD` | `pm5.GetID()` | Get machine ID |
 | `CSAFE_GETVERSION_CMD` | `pm5.GetVersion()` | Get firmware version |
 | `CSAFE_GETPOWER_CMD` | `pm5.GetPower()` | Get stroke power |

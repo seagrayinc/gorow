@@ -30,7 +30,7 @@ func main() {
 		panic(err)
 	}
 
-	err = p.Send(ctx, pm5.GetStatus())
+	err = p.Send(ctx, pm5.GetSerial())
 	if err != nil {
 		panic(err)
 	}
