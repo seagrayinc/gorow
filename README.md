@@ -81,6 +81,7 @@ func main() {
 | `CSAFE_GETID_CMD` | `pm5.GetID()` | Get machine ID |
 | `CSAFE_GETVERSION_CMD` | `pm5.GetVersion()` | Get firmware version |
 | `CSAFE_GETODOMETER_CMD` | `pm5.GetOdometer()` | Get odometer distance |
+| `CSAFE_GETERRORCODE_CMD` | `pm5.GetErrorCode()` | Get error code |
 | `CSAFE_GETPOWER_CMD` | `pm5.GetPower()` | Get stroke power |
 | `CSAFE_PM_GETSTROKESTATE` | `pm5.GetStrokeState()` | Get current stroke state |
 | `CSAFE_PM_GETSTROKESTATS` | `pm5.GetStrokeStats()` | Get stroke statistics |
