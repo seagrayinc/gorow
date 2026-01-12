@@ -1,12 +1,12 @@
 package pm5
 
 import (
-	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
+	"github.com/seagrayinc/pm5-csafe/internal/csafe"
 )
 
 const CSAFE_PM_GET_WORKOUTSTATE = 0x8D
 
-func GetWorkoutState() csafe.Command {
+func GetWorkoutState() Command {
 	return wrap(csafe.ShortCommand(CSAFE_PM_GET_WORKOUTSTATE))
 }
 

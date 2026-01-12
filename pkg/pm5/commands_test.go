@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
-	"github.com/seagrayinc/pm5-csafe/pkg/hid"
+	"github.com/seagrayinc/pm5-csafe/internal/csafe"
+	hid2 "github.com/seagrayinc/pm5-csafe/internal/hid"
 )
 
 // parseHexString converts a dash-separated hex string to bytes
@@ -149,12 +149,12 @@ func TestEndToEnd(t *testing.T) {
 			rawBytes := parseHexString(tt.rawHex)
 
 			// Setup mock HID
-			mockHID := hid.NewMockHID()
+			mockHID := hid2.NewMockHID()
 
 			// Create transport with mock device
 			transport := &csafe.Transport{
 				Device:        mockHID,
-				ReportLengths: ReportLengths,
+				ReportLengths: reportLengths,
 			}
 
 			// Create context with timeout
@@ -167,7 +167,7 @@ func TestEndToEnd(t *testing.T) {
 
 			// Emit the raw bytes as a HID report
 			go func() {
-				mockHID.Emit(hid.Report{
+				mockHID.Emit(hid2.Report{
 					ID:   tt.reportID,
 					Data: rawBytes,
 				})
@@ -177,9 +177,9 @@ func TestEndToEnd(t *testing.T) {
 			select {
 			case frame := <-frameChan:
 				// Parse the responses
-				responses, err := ParseResponses(frame)
+				responses, err := parseResponses(frame)
 				if err != nil {
-					t.Fatalf("ParseResponses failed: %v", err)
+					t.Fatalf("parseResponses failed: %v", err)
 				}
 
 				if len(responses) != len(tt.expected) {

@@ -3,12 +3,12 @@ package pm5
 import (
 	"encoding/binary"
 
-	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
+	"github.com/seagrayinc/pm5-csafe/internal/csafe"
 )
 
 const CSAFE_GETPOWER_CMD = 0xB4
 
-func GetPower() csafe.Command {
+func GetPower() Command {
 	return csafe.ShortCommand(CSAFE_GETPOWER_CMD)
 }
 

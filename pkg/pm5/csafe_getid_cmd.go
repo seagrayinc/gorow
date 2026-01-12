@@ -1,12 +1,12 @@
 package pm5
 
 import (
-	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
+	"github.com/seagrayinc/pm5-csafe/internal/csafe"
 )
 
 const CSAFE_GETID_CMD = 0x92
 
-func GetID() csafe.Command {
+func GetID() Command {
 	return csafe.ShortCommand(CSAFE_GETID_CMD)
 }
 

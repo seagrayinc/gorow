@@ -1,12 +1,12 @@
 package pm5
 
 import (
-	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
+	"github.com/seagrayinc/pm5-csafe/internal/csafe"
 )
 
 const CSAFE_PM_GET_STROKESTATE = 0xBF
 
-func GetStrokeState() csafe.Command {
+func GetStrokeState() Command {
 	return wrap(csafe.ShortCommand(CSAFE_PM_GET_STROKESTATE))
 }
 

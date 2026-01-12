@@ -1,7 +1,7 @@
 package pm5
 
 import (
-	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
+	"github.com/seagrayinc/pm5-csafe/internal/csafe"
 )
 
 const CSAFE_GETSTATUS_CMD = 0x80
@@ -26,7 +26,7 @@ const (
 	FrameStatusNotReady = 0x30
 )
 
-func GetStatus() csafe.Command {
+func GetStatus() Command {
 	return csafe.ShortCommand(CSAFE_GETSTATUS_CMD)
 }
 

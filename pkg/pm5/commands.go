@@ -5,14 +5,14 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
+	"github.com/seagrayinc/pm5-csafe/internal/csafe"
 )
 
 const (
 	CSAFE_SETUSERCFG1_CMD = 0x1A
 )
 
-func ParseResponses(f csafe.ExtendedResponseFrame) ([]interface{}, error) {
+func parseResponses(f csafe.ExtendedResponseFrame) ([]interface{}, error) {
 	var parsedResponses []interface{}
 
 	parsedResponses = append(parsedResponses, GetStatusResponse(f.ResponseStatus))

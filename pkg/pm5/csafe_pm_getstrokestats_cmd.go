@@ -3,12 +3,12 @@ package pm5
 import (
 	"encoding/binary"
 
-	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
+	"github.com/seagrayinc/pm5-csafe/internal/csafe"
 )
 
 const CSAFE_PM_GET_STROKESTATS = 0x6E
 
-func GetStrokeStats() csafe.Command {
+func GetStrokeStats() Command {
 	return wrap(csafe.LongCommand(CSAFE_PM_GET_STROKESTATS, []byte{0}))
 }
 

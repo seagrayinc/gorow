@@ -3,12 +3,12 @@ package pm5
 import (
 	"encoding/binary"
 
-	"github.com/seagrayinc/pm5-csafe/pkg/csafe"
+	"github.com/seagrayinc/pm5-csafe/internal/csafe"
 )
 
 const CSAFE_GETVERSION_CMD = 0x91
 
-func GetVersion() csafe.Command {
+func GetVersion() Command {
 	return csafe.ShortCommand(CSAFE_GETVERSION_CMD)
 }
 

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/seagrayinc/pm5-csafe/pkg/hid"
+	hid2 "github.com/seagrayinc/pm5-csafe/internal/hid"
 )
 
 const (
@@ -38,7 +38,7 @@ const (
 )
 
 type Transport struct {
-	Device        hid.Device
+	Device        hid2.Device
 	ReportLengths map[byte]int
 	SendTimeout   time.Duration // Minimum time between sends if no message received (default 100ms)
 	SendBuffer    int           // Size of send buffer (default 100)
@@ -55,7 +55,7 @@ func (t *Transport) Close() error {
 	return t.Device.Close()
 }
 
-func (t *Transport) Poll(ctx context.Context, reportChan <-chan hid.Report) <-chan ExtendedResponseFrame {
+func (t *Transport) Poll(ctx context.Context, reportChan <-chan hid2.Report) <-chan ExtendedResponseFrame {
 	out := make(chan ExtendedResponseFrame)
 
 	go func() {
@@ -260,10 +260,10 @@ func extendedFrame(commands []Command) []byte {
 }
 
 // hidReport creates a report with the given ID and length
-func hidReport(id byte, length int, data []byte) hid.Report {
+func hidReport(id byte, length int, data []byte) hid2.Report {
 	report := make([]byte, length)
 	copy(report, data)
-	return hid.Report{
+	return hid2.Report{
 		ID:   id,
 		Data: report,
 	}
