@@ -66,13 +66,22 @@ func main() {
 
 ## Supported Commands
 
-- `CSAFE_GETSTATUS_CMD`
-- `CSAFE_GETID_CMD`
-- `CSAFE_GETVERSION_CMD`
-- `CSAFE_GETPOWER_CMD`
-- `CSAFE_PM_GETSTROKESTATE`
-- `CSAFE_PM_GETSTROKESTATS`
-- `CSAFE_PM_GETWORKOUTSTATE`
+| Command | Function | Description |
+|---------|----------|-------------|
+| `CSAFE_GETSTATUS_CMD` | `pm5.GetStatus()` | Get machine status |
+| `CSAFE_RESET_CMD` | `pm5.Reset()` | Reset the machine |
+| `CSAFE_GOIDLE_CMD` | `pm5.GoIdle()` | Set machine to idle state |
+| `CSAFE_GOHAVEID_CMD` | `pm5.GoHaveID()` | Set machine to have ID state |
+| `CSAFE_GOINUSE_CMD` | `pm5.GoInUse()` | Set machine to in-use state |
+| `CSAFE_GOFINISHED_CMD` | `pm5.GoFinished()` | Set machine to finished state |
+| `CSAFE_GOREADY_CMD` | `pm5.GoReady()` | Set machine to ready state |
+| `CSAFE_BADID_CMD` | `pm5.BadID()` | Signal bad ID |
+| `CSAFE_GETID_CMD` | `pm5.GetID()` | Get machine ID |
+| `CSAFE_GETVERSION_CMD` | `pm5.GetVersion()` | Get firmware version |
+| `CSAFE_GETPOWER_CMD` | `pm5.GetPower()` | Get stroke power |
+| `CSAFE_PM_GETSTROKESTATE` | `pm5.GetStrokeState()` | Get current stroke state |
+| `CSAFE_PM_GETSTROKESTATS` | `pm5.GetStrokeStats()` | Get stroke statistics |
+| `CSAFE_PM_GETWORKOUTSTATE` | `pm5.GetWorkoutState()` | Get workout state |
 
 ## Examples
 
