@@ -23,6 +23,7 @@ var (
 		csafe_GETID_CMD:           wrappedParser(parseGetIDResponse),
 		csafe_GETUNITS_CMD:        wrappedParser(parseGetUnitsResponse),
 		csafe_GETSERIAL_CMD:       wrappedParser(parseGetSerialResponse),
+		csafe_GETODOMETER_CMD:     wrappedParser(parseGetOdometerResponse),
 		csafe_PM_GET_STROKESTATS:  wrappedParser(parseGetStrokeStatsResponse),
 		csafe_PM_GET_STROKESTATE:  wrappedParser(parseGetStrokeStateResponse),
 		csafe_PM_GET_WORKOUTSTATE: wrappedParser(parseGetWorkoutStateResponse),
