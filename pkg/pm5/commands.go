@@ -9,6 +9,7 @@ import (
 
 type parserFunc func([]byte) (any, error)
 
+// wrappedParser is a helper to convert a typed parser function into a generic parserFunc.
 func wrappedParser[T any](f func([]byte) (T, error)) parserFunc {
 	return func(b []byte) (any, error) {
 		return f(b)
