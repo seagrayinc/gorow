@@ -28,7 +28,7 @@ type Command = csafe.Command
 
 // PM5 represents a connection to a Concept2 PM5 monitor over USB HID.
 type PM5 struct {
-	events    chan interface{}
+	events    chan any
 	transport csafe.Transport
 }
 
@@ -45,7 +45,7 @@ func Open(ctx context.Context) (*PM5, error) {
 	}
 
 	p := &PM5{
-		events: make(chan interface{}, 100),
+		events: make(chan any, 100),
 		transport: csafe.Transport{
 			Device:        dev,
 			ReportLengths: reportLengths,
@@ -73,7 +73,7 @@ func Open(ctx context.Context) (*PM5, error) {
 }
 
 // EventStream returns a channel that emits PM5 events as they are received.
-func (p *PM5) EventStream() <-chan interface{} {
+func (p *PM5) EventStream() <-chan any {
 	return p.events
 }
 

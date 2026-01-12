@@ -2,91 +2,57 @@ package pm5
 
 import (
 	"encoding/hex"
-	"errors"
 	"log/slog"
 
 	"github.com/seagrayinc/gorow/internal/csafe"
 )
 
-const (
-	csafe_SETUSERCFG1_CMD = 0x1A
+type parserFunc func([]byte) (any, error)
+
+func wrappedParser[T any](f func([]byte) (T, error)) parserFunc {
+	return func(b []byte) (any, error) {
+		return f(b)
+	}
+}
+
+var (
+	parserMap = map[byte]parserFunc{
+		csafe_GETVERSION_CMD:      wrappedParser(parseGetVersionResponse),
+		csafe_GETPOWER_CMD:        wrappedParser(parseGetPowerResponse),
+		csafe_GETID_CMD:           wrappedParser(parseGetIDResponse),
+		csafe_PM_GET_STROKESTATS:  wrappedParser(parseGetStrokeStatsResponse),
+		csafe_PM_GET_STROKESTATE:  wrappedParser(parseGetStrokeStateResponse),
+		csafe_PM_GET_WORKOUTSTATE: wrappedParser(parseGetWorkoutStateResponse),
+	}
 )
 
-func parseResponses(f csafe.ExtendedResponseFrame) ([]interface{}, error) {
-	var parsedResponses []interface{}
+func parseResponses(f csafe.ExtendedResponseFrame) ([]any, error) {
+	// Every response frame includes a status byte that we can use to construct a GetStatusResponse. Even in the case
+	// where GetStatus is explicitly requested, this results in an empty CSAFE data payload and just the status byte.
+	// For this reason, we'll always create _at least_ a GetStatusResponse event for every response frame.
+	responses := []any{GetStatusResponse(f.ResponseStatus)}
 
-	parsedResponses = append(parsedResponses, GetStatusResponse(f.ResponseStatus))
-
+	// Now parse out any additional command responses included in the frame.
 	for _, resp := range f.CommandResponses {
-		switch resp.Command {
-		case csafe_GETVERSION_CMD:
-			parsedResp, err := parseGetVersionResponse(resp.Data)
-			if err != nil {
-				return nil, err
-			}
-			parsedResponses = append(parsedResponses, parsedResp)
-
-		case csafe_GETPOWER_CMD:
-			parsedResp, err := parseGetPowerResponse(resp.Data)
-			if err != nil {
-				return nil, err
-			}
-			parsedResponses = append(parsedResponses, parsedResp)
-
-		case csafe_GETID_CMD:
-			parsedResp, err := parseGetIDResponse(resp.Data)
-			if err != nil {
-				return nil, err
-			}
-			parsedResponses = append(parsedResponses, parsedResp)
-
-		case csafe_SETUSERCFG1_CMD:
-			unwrapped, err := unwrap(resp.Data)
-			if err != nil {
-				return nil, err
-			}
-			switch unwrapped.Command {
-			case csafe_PM_GET_STROKESTATS:
-				parsedResp, err := parseGetStrokeStatsResponse(unwrapped.Data)
-				if err != nil {
-					return nil, err
-				}
-				parsedResponses = append(parsedResponses, parsedResp)
-
-			case csafe_PM_GET_STROKESTATE:
-				parsedResp, err := parseGetStrokeStateResponse(unwrapped.Data)
-				if err != nil {
-					return nil, err
-				}
-				parsedResponses = append(parsedResponses, parsedResp)
-
-			case csafe_PM_GET_WORKOUTSTATE:
-				parsedResp, err := parseGetWorkoutStateResponse(unwrapped.Data)
-				if err != nil {
-					return nil, err
-				}
-				parsedResponses = append(parsedResponses, parsedResp)
-
-			default:
-				slog.Warn("unsupported wrapped command response", slog.String("command", hex.EncodeToString([]byte{unwrapped.Command})))
-			}
-
-		default:
-			slog.Warn("unsupported command response", slog.String("command", hex.EncodeToString([]byte{resp.Command})))
+		r, err := unwrap(resp)
+		if err != nil {
+			slog.Error("failed to unwrap response", slog.Any("error", err))
+			continue
 		}
+
+		parser, ok := parserMap[r.Command]
+		if !ok {
+			slog.Warn("unsupported command response", slog.String("command", hex.EncodeToString([]byte{resp.Command})))
+			continue
+		}
+
+		parsedResp, err := parser(r.Data)
+		if err != nil {
+			return nil, err
+		}
+
+		responses = append(responses, parsedResp)
 	}
 
-	return parsedResponses, nil
-}
-
-func wrap(c csafe.Command) csafe.Command {
-	return csafe.LongCommand(csafe_SETUSERCFG1_CMD, c)
-}
-
-func unwrap(b []byte) (csafe.Response, error) {
-	responses := csafe.ParseResponses(b)
-	if len(responses) < 1 {
-		return csafe.Response{}, errors.New("malformed response")
-	}
-	return responses[0], nil
+	return responses, nil
 }

@@ -8,18 +8,22 @@ import (
 
 const csafe_GETPOWER_CMD = 0xB4
 
+const (
+	PowerUnitsWatts = 0x58
+)
+
 func GetPower() Command {
 	return csafe.ShortCommand(csafe_GETPOWER_CMD)
 }
 
 type GetPowerResponse struct {
 	StrokeWatts    int
-	UnitsSpecifier int
+	UnitsSpecifier byte
 }
 
 func parseGetPowerResponse(b []byte) (GetPowerResponse, error) {
 	return GetPowerResponse{
 		StrokeWatts:    int(binary.LittleEndian.Uint16(b[:2])),
-		UnitsSpecifier: int(b[2]),
+		UnitsSpecifier: b[2],
 	}, nil
 }
