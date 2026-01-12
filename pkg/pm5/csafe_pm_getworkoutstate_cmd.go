@@ -1,13 +1,13 @@
 package pm5
 
 import (
-	"github.com/seagrayinc/pm5-csafe/internal/csafe"
+	"github.com/seagrayinc/gorow/internal/csafe"
 )
 
-const CSAFE_PM_GET_WORKOUTSTATE = 0x8D
+const csafe_PM_GET_WORKOUTSTATE = 0x8D
 
 func GetWorkoutState() Command {
-	return wrap(csafe.ShortCommand(CSAFE_PM_GET_WORKOUTSTATE))
+	return wrap(csafe.ShortCommand(csafe_PM_GET_WORKOUTSTATE))
 }
 
 type GetWorkoutStateResponse struct {
@@ -32,7 +32,7 @@ var WorkoutStateMap = map[int]string{
 	13: "Workout rearm",
 }
 
-func ParseGetWorkoutStateResponse(b []byte) (GetWorkoutStateResponse, error) {
+func parseGetWorkoutStateResponse(b []byte) (GetWorkoutStateResponse, error) {
 	//typedef enum {
 	//	WORKOUTSTATE_WAITTOBEGIN, /**< Wait to begin state (0). */
 	//	WORKOUTSTATE_WORKOUTROW, /**< Workout row state (1). */

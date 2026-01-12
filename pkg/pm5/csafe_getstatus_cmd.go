@@ -1,10 +1,10 @@
 package pm5
 
 import (
-	"github.com/seagrayinc/pm5-csafe/internal/csafe"
+	"github.com/seagrayinc/gorow/internal/csafe"
 )
 
-const CSAFE_GETSTATUS_CMD = 0x80
+const csafe_GETSTATUS_CMD = 0x80
 
 const (
 	MachineStateError   byte = 0x00
@@ -27,7 +27,7 @@ const (
 )
 
 func GetStatus() Command {
-	return csafe.ShortCommand(CSAFE_GETSTATUS_CMD)
+	return csafe.ShortCommand(csafe_GETSTATUS_CMD)
 }
 
 type GetStatusResponse csafe.ResponseStatus

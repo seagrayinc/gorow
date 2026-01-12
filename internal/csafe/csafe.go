@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	hid2 "github.com/seagrayinc/pm5-csafe/internal/hid"
+	hid2 "github.com/seagrayinc/gorow/internal/hid"
 )
 
 const (

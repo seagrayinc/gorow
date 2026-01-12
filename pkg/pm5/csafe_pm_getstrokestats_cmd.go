@@ -3,13 +3,13 @@ package pm5
 import (
 	"encoding/binary"
 
-	"github.com/seagrayinc/pm5-csafe/internal/csafe"
+	"github.com/seagrayinc/gorow/internal/csafe"
 )
 
-const CSAFE_PM_GET_STROKESTATS = 0x6E
+const csafe_PM_GET_STROKESTATS = 0x6E
 
 func GetStrokeStats() Command {
-	return wrap(csafe.LongCommand(CSAFE_PM_GET_STROKESTATS, []byte{0}))
+	return wrap(csafe.LongCommand(csafe_PM_GET_STROKESTATS, []byte{0}))
 }
 
 type GetStrokeStatsResponse struct {
@@ -24,7 +24,7 @@ type GetStrokeStatsResponse struct {
 	WorkPerStroke      int
 }
 
-func ParseGetStrokeStatsResponse(b []byte) (GetStrokeStatsResponse, error) {
+func parseGetStrokeStatsResponse(b []byte) (GetStrokeStatsResponse, error) {
 	return GetStrokeStatsResponse{
 		StrokeDistance:     int(binary.LittleEndian.Uint16(b[0:2])),
 		StrokeDriveTime:    int(b[2]),

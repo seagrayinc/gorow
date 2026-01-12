@@ -7,8 +7,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/seagrayinc/pm5-csafe/internal/csafe"
-	"github.com/seagrayinc/pm5-csafe/internal/hid"
+	"github.com/seagrayinc/gorow/internal/csafe"
+	"github.com/seagrayinc/gorow/internal/hid"
 )
 
 const (

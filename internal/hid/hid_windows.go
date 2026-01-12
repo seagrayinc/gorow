@@ -286,14 +286,11 @@ func (m *winManager) open(info Info) (Device, error) {
 	r, _, _ = procHidP_GetCaps.Call(preparsedData, uintptr(unsafe.Pointer(&caps)))
 	procHidD_FreePreparsedData.Call(preparsedData)
 
-	//fmt.Printf("%+v", caps)
 	const HIDP_STATUS_SUCCESS = 0x00110000
 	if r != HIDP_STATUS_SUCCESS {
 		windows.CloseHandle(h)
 		return nil, fmt.Errorf("HidP_GetCaps failed: 0x%X", r)
 	}
-
-	fmt.Printf("%+v\n", caps)
 
 	return &winDevice{
 		handle:     h,

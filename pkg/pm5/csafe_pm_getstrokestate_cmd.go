@@ -1,20 +1,20 @@
 package pm5
 
 import (
-	"github.com/seagrayinc/pm5-csafe/internal/csafe"
+	"github.com/seagrayinc/gorow/internal/csafe"
 )
 
-const CSAFE_PM_GET_STROKESTATE = 0xBF
+const csafe_PM_GET_STROKESTATE = 0xBF
 
 func GetStrokeState() Command {
-	return wrap(csafe.ShortCommand(CSAFE_PM_GET_STROKESTATE))
+	return wrap(csafe.ShortCommand(csafe_PM_GET_STROKESTATE))
 }
 
 type GetStrokeStateResponse struct {
 	StrokeState int
 }
 
-func ParseGetStrokeStateResponse(b []byte) (GetStrokeStateResponse, error) {
+func parseGetStrokeStateResponse(b []byte) (GetStrokeStateResponse, error) {
 	//Stroke State
 	//typedef enum {
 	//	STROKESTATE_WAITING_FOR_WHEEL_TO_REACH_MIN_SPEED_STATE, /**< FW to reach min speed state (0). */

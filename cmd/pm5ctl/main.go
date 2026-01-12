@@ -3,29 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/seagrayinc/pm5-csafe/pkg/pm5"
+	"github.com/seagrayinc/gorow/pkg/pm5"
 )
 
 type Workout struct {
 	LastWorkoutState pm5.GetWorkoutStateResponse
 	LastStrokeStats  pm5.GetStrokeStatsResponse
 	LastStrokeState  pm5.GetStrokeStateResponse
-}
-
-func init() {
-	slog.SetDefault(
-		slog.New(
-			slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-				Level: slog.LevelDebug,
-			}),
-		),
-	)
 }
 
 func main() {
@@ -80,6 +69,7 @@ func main() {
 		}
 
 		time.Sleep(1000 * time.Millisecond)
+		fmt.Println("-----")
 		if err := p.Send(ctx, pm5.GetStrokeState(), pm5.GetWorkoutState()); err != nil {
 			fmt.Printf("%+v\n", err)
 		}

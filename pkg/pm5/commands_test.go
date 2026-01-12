@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seagrayinc/pm5-csafe/internal/csafe"
-	hid2 "github.com/seagrayinc/pm5-csafe/internal/hid"
+	"github.com/seagrayinc/gorow/internal/csafe"
+	hid2 "github.com/seagrayinc/gorow/internal/hid"
 )
 
 // parseHexString converts a dash-separated hex string to bytes
@@ -39,7 +39,7 @@ func TestEndToEnd(t *testing.T) {
 			//   00    - Destination Address (PC Host Primary)
 			//   fd    - Source Address (Default Secondary)
 			//   01    - Status byte
-			//   92    - Command (CSAFE_GETID_CMD)
+			//   92    - Command (csafe_GETID_CMD)
 			//   05    - Data byte count (5 bytes)
 			//   30-30-30-30-30 - Data (ASCII "00000")
 			//   a6    - Checksum
@@ -64,7 +64,7 @@ func TestEndToEnd(t *testing.T) {
 		{
 			// Wrapped command response: GetWorkoutStateResponse
 			// Frame: 00-fd-01-1a-03-8d-01-01-95
-			//   1a    - CSAFE_SETUSERCFG1_CMD (wrapper)
+			//   1a    - csafe_SETUSERCFG1_CMD (wrapper)
 			//   03    - wrapper data length
 			//   8d    - CSAFE_PM_GET_WORKOUTSTATE
 			//   01    - data length
@@ -87,9 +87,9 @@ func TestEndToEnd(t *testing.T) {
 		{
 			// Multiple responses: GetStrokeStatsResponse + GetPowerResponse
 			// Frame: 00-fd-81-1a-12-6e-10-b9-00-00-2a-00-38-02-00-00-00-00-00-00-00-08-00-b4-03-06-00-58-bf
-			//   1a 12 - CSAFE_SETUSERCFG1_CMD wrapper with 18 bytes
+			//   1a 12 - csafe_SETUSERCFG1_CMD wrapper with 18 bytes
 			//   6e 10 - CSAFE_PM_GET_STROKESTATS with 16 bytes of data
-			//   b4 03 - CSAFE_GETPOWER_CMD with 3 bytes of data
+			//   b4 03 - csafe_GETPOWER_CMD with 3 bytes of data
 			name:     "GetStrokeStatsResponse_and_GetPowerResponse",
 			rawHex:   "f0-00-fd-81-1a-12-6e-10-b9-00-00-2a-00-38-02-00-00-00-00-00-00-00-08-00-b4-03-06-00-58-bf-f2-f2-00-35-29-00-00-00-00-00-00-00-30-00-81-f2-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00",
 			reportID: 0x02,

@@ -3,13 +3,13 @@ package pm5
 import (
 	"encoding/binary"
 
-	"github.com/seagrayinc/pm5-csafe/internal/csafe"
+	"github.com/seagrayinc/gorow/internal/csafe"
 )
 
-const CSAFE_GETVERSION_CMD = 0x91
+const csafe_GETVERSION_CMD = 0x91
 
 func GetVersion() Command {
-	return csafe.ShortCommand(CSAFE_GETVERSION_CMD)
+	return csafe.ShortCommand(csafe_GETVERSION_CMD)
 }
 
 type GetVersionResponse struct {
@@ -20,7 +20,7 @@ type GetVersionResponse struct {
 	FirmwareVersion int
 }
 
-func ParseGetVersionResponse(b []byte) (GetVersionResponse, error) {
+func parseGetVersionResponse(b []byte) (GetVersionResponse, error) {
 	return GetVersionResponse{
 		ManufacturerID:  int(b[0]),
 		ClassID:         int(b[1]),

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/seagrayinc/pm5-csafe/internal/csafe"
+	"github.com/seagrayinc/gorow/internal/csafe"
 )
 
 const (
-	CSAFE_SETUSERCFG1_CMD = 0x1A
+	csafe_SETUSERCFG1_CMD = 0x1A
 )
 
 func parseResponses(f csafe.ExtendedResponseFrame) ([]interface{}, error) {
@@ -19,49 +19,49 @@ func parseResponses(f csafe.ExtendedResponseFrame) ([]interface{}, error) {
 
 	for _, resp := range f.CommandResponses {
 		switch resp.Command {
-		case CSAFE_GETVERSION_CMD:
-			parsedResp, err := ParseGetVersionResponse(resp.Data)
+		case csafe_GETVERSION_CMD:
+			parsedResp, err := parseGetVersionResponse(resp.Data)
 			if err != nil {
 				return nil, err
 			}
 			parsedResponses = append(parsedResponses, parsedResp)
 
-		case CSAFE_GETPOWER_CMD:
-			parsedResp, err := ParseGetPowerResponse(resp.Data)
+		case csafe_GETPOWER_CMD:
+			parsedResp, err := parseGetPowerResponse(resp.Data)
 			if err != nil {
 				return nil, err
 			}
 			parsedResponses = append(parsedResponses, parsedResp)
 
-		case CSAFE_GETID_CMD:
-			parsedResp, err := ParseGetIDResponse(resp.Data)
+		case csafe_GETID_CMD:
+			parsedResp, err := parseGetIDResponse(resp.Data)
 			if err != nil {
 				return nil, err
 			}
 			parsedResponses = append(parsedResponses, parsedResp)
 
-		case CSAFE_SETUSERCFG1_CMD:
+		case csafe_SETUSERCFG1_CMD:
 			unwrapped, err := unwrap(resp.Data)
 			if err != nil {
 				return nil, err
 			}
 			switch unwrapped.Command {
-			case CSAFE_PM_GET_STROKESTATS:
-				parsedResp, err := ParseGetStrokeStatsResponse(unwrapped.Data)
+			case csafe_PM_GET_STROKESTATS:
+				parsedResp, err := parseGetStrokeStatsResponse(unwrapped.Data)
 				if err != nil {
 					return nil, err
 				}
 				parsedResponses = append(parsedResponses, parsedResp)
 
-			case CSAFE_PM_GET_STROKESTATE:
-				parsedResp, err := ParseGetStrokeStateResponse(unwrapped.Data)
+			case csafe_PM_GET_STROKESTATE:
+				parsedResp, err := parseGetStrokeStateResponse(unwrapped.Data)
 				if err != nil {
 					return nil, err
 				}
 				parsedResponses = append(parsedResponses, parsedResp)
 
-			case CSAFE_PM_GET_WORKOUTSTATE:
-				parsedResp, err := ParseGetWorkoutStateResponse(unwrapped.Data)
+			case csafe_PM_GET_WORKOUTSTATE:
+				parsedResp, err := parseGetWorkoutStateResponse(unwrapped.Data)
 				if err != nil {
 					return nil, err
 				}
@@ -80,7 +80,7 @@ func parseResponses(f csafe.ExtendedResponseFrame) ([]interface{}, error) {
 }
 
 func wrap(c csafe.Command) csafe.Command {
-	return csafe.LongCommand(CSAFE_SETUSERCFG1_CMD, c)
+	return csafe.LongCommand(csafe_SETUSERCFG1_CMD, c)
 }
 
 func unwrap(b []byte) (csafe.Response, error) {

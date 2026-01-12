@@ -1,13 +1,13 @@
 package pm5
 
 import (
-	"github.com/seagrayinc/pm5-csafe/internal/csafe"
+	"github.com/seagrayinc/gorow/internal/csafe"
 )
 
-const CSAFE_GETID_CMD = 0x92
+const csafe_GETID_CMD = 0x92
 
 func GetID() Command {
-	return csafe.ShortCommand(CSAFE_GETID_CMD)
+	return csafe.ShortCommand(csafe_GETID_CMD)
 }
 
 type GetIDResponse struct {
@@ -18,7 +18,7 @@ type GetIDResponse struct {
 	ASCIIDigit4 byte
 }
 
-func ParseGetIDResponse(b []byte) (GetIDResponse, error) {
+func parseGetIDResponse(b []byte) (GetIDResponse, error) {
 	return GetIDResponse{
 		ASCIIDigit0: b[0],
 		ASCIIDigit1: b[1],
